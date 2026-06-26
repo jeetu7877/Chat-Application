@@ -18,7 +18,7 @@ app.use(morgan("dev"));
 
 app.use(
   cors({
-    origin: "http://localhost:5173", 
+    origin: "starlit-moxie-782d49.netlify.app", 
     credentials: true,
   })
 );
