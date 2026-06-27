@@ -111,3 +111,30 @@ export const editMessage = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+export const markAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await Message.updateMany(
+      { 
+        senderId: id, 
+        receiverId: req.user._id,
+        isRead: false 
+      },
+      { isRead: true }
+    );
+
+    // Socket se sender ko notify karo
+    const senderSocketId = getReceiverSocketId(id);
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("messagesRead", { 
+        readBy: req.user._id 
+      });
+    }
+
+    res.status(200).json({ message: "Messages marked as read" });
+  } catch (error) {
+    console.log("Error in markAsRead controller", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
