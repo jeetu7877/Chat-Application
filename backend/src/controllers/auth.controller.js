@@ -14,13 +14,12 @@ export const signup = async (req, res) => {
     }
     const user = await User.findOne({ email });
     if (user) return res.status(400).json({ message: "Email already exists" });
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const newUser = new User({
-      fullName,
-      email,
-      password: hashedPassword,
-    });
+
+    const newUser = new User({ fullName, email, password: hashedPassword });
+
     if (newUser) {
       const token = generateToken(newUser._id, res);
       await newUser.save();
@@ -44,13 +43,11 @@ export const login = async (req, res) => {
   const { email, password } = req.body;
   try {
     const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(400).json({ message: "Invalid credentials" });
-    }
+    if (!user) return res.status(400).json({ message: "Invalid credentials" });
+
     const isPasswordCorrect = await bcrypt.compare(password, user.password);
-    if (!isPasswordCorrect) {
-      return res.status(400).json({ message: "Invalid credentials" });
-    }
+    if (!isPasswordCorrect) return res.status(400).json({ message: "Invalid credentials" });
+
     const token = generateToken(user._id, res);
     res.status(200).json({
       _id: user._id,
@@ -79,9 +76,11 @@ export const updateProfile = async (req, res) => {
   try {
     const { profilePic } = req.body;
     const userId = req.user._id;
+
     if (!profilePic) {
       return res.status(400).json({ message: "Profile pic is required" });
     }
+
     const uploadResponse = await cloudinary.uploader.upload(profilePic);
     const updatedUser = await User.findByIdAndUpdate(
       userId,
@@ -100,6 +99,62 @@ export const checkAuth = (req, res) => {
     res.status(200).json(req.user);
   } catch (error) {
     console.log("Error in checkAuth controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ── Block User ────────────────────────────────────────────────────────────────
+export const blockUser = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { id: targetId } = req.params;
+
+    if (userId.toString() === targetId) {
+      return res.status(400).json({ message: "You cannot block yourself" });
+    }
+
+    const user = await User.findById(userId);
+    if (user.blockedUsers.includes(targetId)) {
+      return res.status(400).json({ message: "User already blocked" });
+    }
+
+    await User.findByIdAndUpdate(userId, {
+      $addToSet: { blockedUsers: targetId },
+    });
+
+    res.status(200).json({ message: "User blocked successfully" });
+  } catch (error) {
+    console.log("Error in blockUser controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ── Unblock User ──────────────────────────────────────────────────────────────
+export const unblockUser = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { id: targetId } = req.params;
+
+    await User.findByIdAndUpdate(userId, {
+      $pull: { blockedUsers: targetId },
+    });
+
+    res.status(200).json({ message: "User unblocked successfully" });
+  } catch (error) {
+    console.log("Error in unblockUser controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ── Get Blocked Users ─────────────────────────────────────────────────────────
+export const getBlockedUsers = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate("blockedUsers", "_id fullName profilePic");
+
+    res.status(200).json(user.blockedUsers);
+  } catch (error) {
+    console.log("Error in getBlockedUsers controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
