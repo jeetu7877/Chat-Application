@@ -8,6 +8,7 @@ import {
   editMessage,
   markAsRead,
   addReaction,
+  clearChat,
 } from "../controllers/message.controller.js";
 
 const router = express.Router();
@@ -15,9 +16,10 @@ const router = express.Router();
 router.get("/users", protectRoute, getUsersForSidebar);
 router.get("/:id", protectRoute, getMessages);
 router.post("/send/:id", protectRoute, sendMessage);
+router.delete("/clear/:id", protectRoute, clearChat);   // ← Clear chat
 router.delete("/:id", protectRoute, deleteMessage);
 router.put("/read/:id", protectRoute, markAsRead);
 router.put("/:id", protectRoute, editMessage);
-router.post("/react/:id", protectRoute, addReaction); // ← Add
+router.post("/react/:id", protectRoute, addReaction);
 
 export default router;
