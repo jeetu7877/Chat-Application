@@ -265,12 +265,19 @@ export const clearChat = async (req, res) => {
     const myId = req.user._id;
     const { id: otherUserId } = req.params;
 
-    await Message.deleteMany({
-      $or: [
-        { senderId: myId, receiverId: otherUserId },
-        { senderId: otherUserId, receiverId: myId },
-      ],
-    });
+    // Delete nahi karo — sirf apne liye hide karo
+    await Message.updateMany(
+      {
+        $or: [
+          { senderId: myId, receiverId: otherUserId },
+          { senderId: otherUserId, receiverId: myId },
+        ],
+        deletedFor: { $ne: myId }, // already deleted nahi ho
+      },
+      {
+        $addToSet: { deletedFor: myId }, // sirf apne liye mark karo
+      }
+    );
 
     res.status(200).json({ message: "Chat cleared successfully" });
   } catch (error) {
