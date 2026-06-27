@@ -17,7 +17,12 @@ app.use(cookieParser());
 app.use(morgan("dev"));
 app.use(
   cors({
-    origin: ["https://starlit-moxie-782d49.netlify.app", "capacitor://localhost", "http://localhost"],
+    origin: [
+      "https://starlit-moxie-782d49.netlify.app",
+      "capacitor://localhost",
+      "http://localhost",
+      "https://localhost"          // ✅ ye add karo
+    ],
     credentials: true,
   })
 );
