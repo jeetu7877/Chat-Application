@@ -5,7 +5,7 @@ import { getReceiverSocketId, io } from "../lib/socket.js";
 
 export const getUsersForSidebar = async (req, res) => {
   try {
-    const loggedInUserId = req.user._id; // ← Fix: req._id → req.user._id
+    const loggedInUserId = req.user._id;
 
     // Blocked users filter karo
     const loggedInUser = await User.findById(loggedInUserId);
@@ -14,11 +14,45 @@ export const getUsersForSidebar = async (req, res) => {
     const filteredUsers = await User.find({
       _id: {
         $ne: loggedInUserId,
-        $nin: blockedUserIds, // ← Blocked users hide karo
+        $nin: blockedUserIds,
       },
     }).select("-password");
 
-    res.status(200).json(filteredUsers);
+    // Har user ke liye last message lo
+    const usersWithLastMessage = await Promise.all(
+      filteredUsers.map(async (user) => {
+        const lastMessage = await Message.findOne({
+          $or: [
+            { senderId: loggedInUserId, receiverId: user._id },
+            { senderId: user._id, receiverId: loggedInUserId },
+          ],
+        }).sort({ createdAt: -1 });
+
+        // Unread count
+        const unreadCount = await Message.countDocuments({
+          senderId: user._id,
+          receiverId: loggedInUserId,
+          isRead: false,
+        });
+
+        return {
+          ...user.toObject(),
+          lastMessage: lastMessage?.text ||
+            (lastMessage?.image ? "📷 Photo" :
+            lastMessage?.audio ? "🎤 Voice message" :
+            lastMessage?.file ? `📎 ${lastMessage?.fileName || "File"}` : ""),
+          lastMessageTime: lastMessage?.createdAt || null,
+          unreadCount,
+        };
+      })
+    );
+
+    // Sirf jinse messages hain unhe dikhao, latest pehle
+    const sorted = usersWithLastMessage
+      .filter((u) => !!u.lastMessageTime) // ← No messages = hide karo
+      .sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
+
+    res.status(200).json(sorted);
   } catch (error) {
     console.error("Error in getUsersForSidebar", error.message);
     res.status(500).json({ error: "Internal server error" });
