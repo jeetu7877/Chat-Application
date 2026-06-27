@@ -33,25 +33,41 @@ export const getMessages = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
   try {
-    const { text, image } = req.body;
+    const { text, image, audio } = req.body;
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
+
     let imageUrl;
+    let audioUrl;
+
     if (image) {
       const uploadResponse = await cloudinary.uploader.upload(image);
       imageUrl = uploadResponse.secure_url;
     }
+
+    if (audio) {
+      const uploadResponse = await cloudinary.uploader.upload(audio, {
+        resource_type: "video", // Cloudinary audio ke liye "video" use karta hai
+        folder: "audio_messages",
+      });
+      audioUrl = uploadResponse.secure_url;
+    }
+
     const newMessage = new Message({
       senderId,
       receiverId,
       text,
       image: imageUrl,
+      audio: audioUrl,
     });
+
     await newMessage.save();
+
     const receiverSocketId = getReceiverSocketId(receiverId);
     if(receiverSocketId){
       io.to(receiverSocketId).emit("newMessage", newMessage);
     }
+
     res.status(201).json(newMessage);
   } catch (error) {
     console.log("Error in sendMessage controller: ", error.message);
@@ -154,20 +170,16 @@ export const addReaction = async (req, res) => {
 
     if (existingIndex !== -1) {
       if (message.reactions[existingIndex].emoji === emoji) {
-        // Same emoji → remove karo
         message.reactions.splice(existingIndex, 1);
       } else {
-        // Alag emoji → update karo
         message.reactions[existingIndex].emoji = emoji;
       }
     } else {
-      // Nayi reaction add karo
       message.reactions.push({ userId, emoji });
     }
 
     await message.save();
 
-    // Dono users ko notify karo
     const receiverSocketId = getReceiverSocketId(message.receiverId);
     const senderSocketId = getReceiverSocketId(message.senderId);
 
