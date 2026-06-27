@@ -46,7 +46,15 @@ export const getUsersForSidebar = async (req, res) => {
         };
       })
     );
-
+    // Sirf jinse messages hain unhe dikhao
+const sorted = usersWithLastMessage
+  .filter((u) => !!u.lastMessageTime) // ← Ye line add karo
+  .sort((a, b) => {
+    if (!a.lastMessageTime && !b.lastMessageTime) return 0;
+    if (!a.lastMessageTime) return 1;
+    if (!b.lastMessageTime) return -1;
+    return new Date(b.lastMessageTime) - new Date(a.lastMessageTime);
+  });
     // Sort by last message time — no messages wale neeche
     const sorted = usersWithLastMessage.sort((a, b) => {
       if (!a.lastMessageTime && !b.lastMessageTime) return 0;
