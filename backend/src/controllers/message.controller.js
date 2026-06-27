@@ -7,7 +7,6 @@ export const getUsersForSidebar = async (req, res) => {
   try {
     const loggedInUserId = req.user._id;
 
-    // Blocked users filter karo
     const loggedInUser = await User.findById(loggedInUserId);
     const blockedUserIds = loggedInUser.blockedUsers || [];
 
@@ -18,21 +17,22 @@ export const getUsersForSidebar = async (req, res) => {
       },
     }).select("-password");
 
-    // Har user ke liye last message lo
     const usersWithLastMessage = await Promise.all(
       filteredUsers.map(async (user) => {
+        // ← deletedFor filter add karo
         const lastMessage = await Message.findOne({
           $or: [
             { senderId: loggedInUserId, receiverId: user._id },
             { senderId: user._id, receiverId: loggedInUserId },
           ],
+          deletedFor: { $ne: loggedInUserId }, // ← Clear chat ke baad hide
         }).sort({ createdAt: -1 });
 
-        // Unread count
         const unreadCount = await Message.countDocuments({
           senderId: user._id,
           receiverId: loggedInUserId,
           isRead: false,
+          deletedFor: { $ne: loggedInUserId }, // ← Yahan bhi
         });
 
         return {
@@ -47,10 +47,13 @@ export const getUsersForSidebar = async (req, res) => {
       })
     );
 
-    // Sirf jinse messages hain unhe dikhao, latest pehle
-    const sorted = usersWithLastMessage
-      .filter((u) => !!u.lastMessageTime) // ← No messages = hide karo
-      .sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
+    // Sort by last message time — no messages wale neeche
+    const sorted = usersWithLastMessage.sort((a, b) => {
+      if (!a.lastMessageTime && !b.lastMessageTime) return 0;
+      if (!a.lastMessageTime) return 1;
+      if (!b.lastMessageTime) return -1;
+      return new Date(b.lastMessageTime) - new Date(a.lastMessageTime);
+    });
 
     res.status(200).json(sorted);
   } catch (error) {
@@ -58,7 +61,6 @@ export const getUsersForSidebar = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
-
 export const getMessages = async (req, res) => {
   try {
     const { id: userToChatId } = req.params;
