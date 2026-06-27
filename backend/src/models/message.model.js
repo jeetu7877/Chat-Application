@@ -18,6 +18,9 @@ const messageSchema = new mongoose.Schema(
     image: {
       type: String,
     },
+    audio: {
+      type: String, // ← Audio URL Cloudinary se
+    },
     isEdited: {
       type: Boolean,
       default: false,
