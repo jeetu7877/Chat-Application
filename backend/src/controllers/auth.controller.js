@@ -6,29 +6,21 @@ import cloudinary from "../lib/cloudinary.js";
 export const signup = async (req, res) => {
   const { fullName, email, password } = req.body;
   try {
-    if (!fullName || !email || !password) {
+    if (!fullName || !email || !password)
       return res.status(400).json({ message: "All fields are required" });
-    }
-    if (password.length < 6) {
+    if (password.length < 6)
       return res.status(400).json({ message: "Password must be at least 6 characters" });
-    }
     const user = await User.findOne({ email });
     if (user) return res.status(400).json({ message: "Email already exists" });
-
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-
     const newUser = new User({ fullName, email, password: hashedPassword });
-
     if (newUser) {
       const token = generateToken(newUser._id, res);
       await newUser.save();
       res.status(201).json({
-        _id: newUser._id,
-        fullName: newUser.fullName,
-        email: newUser.email,
-        profilePic: newUser.profilePic,
-        token,
+        _id: newUser._id, fullName: newUser.fullName,
+        email: newUser.email, profilePic: newUser.profilePic, token,
       });
     } else {
       res.status(400).json({ message: "Invalid user data" });
@@ -44,17 +36,12 @@ export const login = async (req, res) => {
   try {
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: "Invalid credentials" });
-
     const isPasswordCorrect = await bcrypt.compare(password, user.password);
     if (!isPasswordCorrect) return res.status(400).json({ message: "Invalid credentials" });
-
     const token = generateToken(user._id, res);
     res.status(200).json({
-      _id: user._id,
-      fullName: user.fullName,
-      email: user.email,
-      profilePic: user.profilePic,
-      token,
+      _id: user._id, fullName: user.fullName,
+      email: user.email, profilePic: user.profilePic, token,
     });
   } catch (error) {
     console.log("Error in login controller", error.message);
@@ -76,16 +63,11 @@ export const updateProfile = async (req, res) => {
   try {
     const { profilePic } = req.body;
     const userId = req.user._id;
-
-    if (!profilePic) {
+    if (!profilePic)
       return res.status(400).json({ message: "Profile pic is required" });
-    }
-
     const uploadResponse = await cloudinary.uploader.upload(profilePic);
     const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { profilePic: uploadResponse.secure_url },
-      { new: true }
+      userId, { profilePic: uploadResponse.secure_url }, { new: true }
     );
     res.status(200).json(updatedUser);
   } catch (error) {
@@ -103,45 +85,41 @@ export const checkAuth = (req, res) => {
   }
 };
 
-// ── Get All Users (Contacts page ke liye) ────────────────────────────────────
+// ── Get All Users (for Contacts) — blocked users dono taraf se filter ─────────
 export const getAllUsers = async (req, res) => {
   try {
-    const loggedInUser = await User.findById(req.user._id);
-    const blockedUserIds = loggedInUser.blockedUsers || [];
+    const myId = req.user._id;
+    const me = await User.findById(myId).select("blockedUsers");
+    const blockedByMe = me.blockedUsers || [];
+
+    // Jin logon ne mujhe block kiya hai
+    const usersWhoBlockedMe = await User.find({ blockedUsers: myId }).select("_id");
+    const blockedMeIds = usersWhoBlockedMe.map(u => u._id);
+
+    const allBlocked = [...blockedByMe, ...blockedMeIds];
 
     const users = await User.find({
-      _id: {
-        $ne: req.user._id,
-        $nin: blockedUserIds,
-      },
+      _id: { $ne: myId, $nin: allBlocked },
     }).select("-password");
 
     res.status(200).json(users);
   } catch (error) {
-    console.log("Error in getAllUsers", error.message);
+    console.log("Error in getAllUsers controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
-// ── Block User ────────────────────────────────────────────────────────────────
+// ── Block User ─────────────────────────────────────────────────────────────────
 export const blockUser = async (req, res) => {
   try {
     const userId = req.user._id;
     const { id: targetId } = req.params;
-
-    if (userId.toString() === targetId) {
+    if (userId.toString() === targetId)
       return res.status(400).json({ message: "You cannot block yourself" });
-    }
-
     const user = await User.findById(userId);
-    if (user.blockedUsers.includes(targetId)) {
+    if (user.blockedUsers.includes(targetId))
       return res.status(400).json({ message: "User already blocked" });
-    }
-
-    await User.findByIdAndUpdate(userId, {
-      $addToSet: { blockedUsers: targetId },
-    });
-
+    await User.findByIdAndUpdate(userId, { $addToSet: { blockedUsers: targetId } });
     res.status(200).json({ message: "User blocked successfully" });
   } catch (error) {
     console.log("Error in blockUser controller", error.message);
@@ -149,16 +127,12 @@ export const blockUser = async (req, res) => {
   }
 };
 
-// ── Unblock User ──────────────────────────────────────────────────────────────
+// ── Unblock User ───────────────────────────────────────────────────────────────
 export const unblockUser = async (req, res) => {
   try {
     const userId = req.user._id;
     const { id: targetId } = req.params;
-
-    await User.findByIdAndUpdate(userId, {
-      $pull: { blockedUsers: targetId },
-    });
-
+    await User.findByIdAndUpdate(userId, { $pull: { blockedUsers: targetId } });
     res.status(200).json({ message: "User unblocked successfully" });
   } catch (error) {
     console.log("Error in unblockUser controller", error.message);
@@ -166,12 +140,11 @@ export const unblockUser = async (req, res) => {
   }
 };
 
-// ── Get Blocked Users ─────────────────────────────────────────────────────────
+// ── Get Blocked Users ──────────────────────────────────────────────────────────
 export const getBlockedUsers = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
       .populate("blockedUsers", "_id fullName profilePic");
-
     res.status(200).json(user.blockedUsers);
   } catch (error) {
     console.log("Error in getBlockedUsers controller", error.message);
