@@ -103,6 +103,26 @@ export const checkAuth = (req, res) => {
   }
 };
 
+// ── Get All Users (Contacts page ke liye) ────────────────────────────────────
+export const getAllUsers = async (req, res) => {
+  try {
+    const loggedInUser = await User.findById(req.user._id);
+    const blockedUserIds = loggedInUser.blockedUsers || [];
+
+    const users = await User.find({
+      _id: {
+        $ne: req.user._id,
+        $nin: blockedUserIds,
+      },
+    }).select("-password");
+
+    res.status(200).json(users);
+  } catch (error) {
+    console.log("Error in getAllUsers", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 // ── Block User ────────────────────────────────────────────────────────────────
 export const blockUser = async (req, res) => {
   try {
