@@ -19,20 +19,19 @@ export const getUsersForSidebar = async (req, res) => {
 
     const usersWithLastMessage = await Promise.all(
       filteredUsers.map(async (user) => {
-        // ← deletedFor filter add karo
         const lastMessage = await Message.findOne({
           $or: [
             { senderId: loggedInUserId, receiverId: user._id },
             { senderId: user._id, receiverId: loggedInUserId },
           ],
-          deletedFor: { $ne: loggedInUserId }, // ← Clear chat ke baad hide
+          deletedFor: { $ne: loggedInUserId },
         }).sort({ createdAt: -1 });
 
         const unreadCount = await Message.countDocuments({
           senderId: user._id,
           receiverId: loggedInUserId,
           isRead: false,
-          deletedFor: { $ne: loggedInUserId }, // ← Yahan bhi
+          deletedFor: { $ne: loggedInUserId },
         });
 
         return {
@@ -46,22 +45,11 @@ export const getUsersForSidebar = async (req, res) => {
         };
       })
     );
-    // Sirf jinse messages hain unhe dikhao
-const sorted = usersWithLastMessage
-  .filter((u) => !!u.lastMessageTime) // ← Ye line add karo
-  .sort((a, b) => {
-    if (!a.lastMessageTime && !b.lastMessageTime) return 0;
-    if (!a.lastMessageTime) return 1;
-    if (!b.lastMessageTime) return -1;
-    return new Date(b.lastMessageTime) - new Date(a.lastMessageTime);
-  });
-    // Sort by last message time — no messages wale neeche
-    const sorted = usersWithLastMessage.sort((a, b) => {
-      if (!a.lastMessageTime && !b.lastMessageTime) return 0;
-      if (!a.lastMessageTime) return 1;
-      if (!b.lastMessageTime) return -1;
-      return new Date(b.lastMessageTime) - new Date(a.lastMessageTime);
-    });
+
+    // ← Sirf jinse messages hain + latest pehle
+    const sorted = usersWithLastMessage
+      .filter((u) => !!u.lastMessageTime)
+      .sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
 
     res.status(200).json(sorted);
   } catch (error) {
@@ -69,6 +57,7 @@ const sorted = usersWithLastMessage
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
 export const getMessages = async (req, res) => {
   try {
     const { id: userToChatId } = req.params;
@@ -79,7 +68,7 @@ export const getMessages = async (req, res) => {
         { senderId: myId, receiverId: userToChatId },
         { senderId: userToChatId, receiverId: myId },
       ],
-      deletedFor: { $ne: myId }, // ← Apne liye deleted messages hide karo
+      deletedFor: { $ne: myId },
     });
 
     res.status(200).json(messages);
@@ -278,17 +267,16 @@ export const clearChat = async (req, res) => {
     const myId = req.user._id;
     const { id: otherUserId } = req.params;
 
-    // Delete nahi karo — sirf apne liye hide karo
     await Message.updateMany(
       {
         $or: [
           { senderId: myId, receiverId: otherUserId },
           { senderId: otherUserId, receiverId: myId },
         ],
-        deletedFor: { $ne: myId }, // already deleted nahi ho
+        deletedFor: { $ne: myId },
       },
       {
-        $addToSet: { deletedFor: myId }, // sirf apne liye mark karo
+        $addToSet: { deletedFor: myId },
       }
     );
 
