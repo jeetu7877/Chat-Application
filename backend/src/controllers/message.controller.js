@@ -111,6 +111,7 @@ export const editMessage = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
 export const markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
@@ -124,7 +125,6 @@ export const markAsRead = async (req, res) => {
       { isRead: true }
     );
 
-    // Socket se sender ko notify karo
     const senderSocketId = getReceiverSocketId(id);
     if (senderSocketId) {
       io.to(senderSocketId).emit("messagesRead", { 
@@ -135,6 +135,58 @@ export const markAsRead = async (req, res) => {
     res.status(200).json({ message: "Messages marked as read" });
   } catch (error) {
     console.log("Error in markAsRead controller", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const addReaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { emoji } = req.body;
+    const userId = req.user._id;
+
+    const message = await Message.findById(id);
+    if (!message) return res.status(404).json({ error: "Message not found" });
+
+    const existingIndex = message.reactions.findIndex(
+      (r) => r.userId.toString() === userId.toString()
+    );
+
+    if (existingIndex !== -1) {
+      if (message.reactions[existingIndex].emoji === emoji) {
+        // Same emoji → remove karo
+        message.reactions.splice(existingIndex, 1);
+      } else {
+        // Alag emoji → update karo
+        message.reactions[existingIndex].emoji = emoji;
+      }
+    } else {
+      // Nayi reaction add karo
+      message.reactions.push({ userId, emoji });
+    }
+
+    await message.save();
+
+    // Dono users ko notify karo
+    const receiverSocketId = getReceiverSocketId(message.receiverId);
+    const senderSocketId = getReceiverSocketId(message.senderId);
+
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("messageReaction", {
+        messageId: id,
+        reactions: message.reactions,
+      });
+    }
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("messageReaction", {
+        messageId: id,
+        reactions: message.reactions,
+      });
+    }
+
+    res.status(200).json(message);
+  } catch (error) {
+    console.log("Error in addReaction controller", error.message);
     res.status(500).json({ error: "Internal server error" });
   }
 };
