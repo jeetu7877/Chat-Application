@@ -5,7 +5,13 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: ["http://localhost:5173", "https://starlit-moxie-782d49.netlify.app", "capacitor://localhost", "http://localhost"],
+        origin: [
+          "http://localhost:5173",
+          "https://starlit-moxie-782d49.netlify.app",
+          "capacitor://localhost",
+          "http://localhost",
+          "https://localhost"      // ✅ ye add karo
+        ],
         credentials: true,
     }
 });
