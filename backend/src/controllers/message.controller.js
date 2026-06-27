@@ -46,7 +46,6 @@ export const getUsersForSidebar = async (req, res) => {
       })
     );
 
-    // ← Sirf jinse messages hain + latest pehle
     const sorted = usersWithLastMessage
       .filter((u) => !!u.lastMessageTime)
       .sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
@@ -83,6 +82,12 @@ export const sendMessage = async (req, res) => {
     const { text, image, audio, file, fileName, fileType } = req.body;
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
+
+    // ✅ Block check — agar receiver ne humein block kiya hai, to message na bheje
+    const receiver = await User.findById(receiverId);
+    if (receiver?.blockedUsers?.includes(senderId.toString())) {
+      return res.status(403).json({ error: "You cannot message this user" });
+    }
 
     let imageUrl;
     let audioUrl;
@@ -262,6 +267,7 @@ export const addReaction = async (req, res) => {
   }
 };
 
+// ✅ "Delete Chat" — clearChat ko hi yahan se use karenge (route me map karenge)
 export const clearChat = async (req, res) => {
   try {
     const myId = req.user._id;
@@ -283,6 +289,38 @@ export const clearChat = async (req, res) => {
     res.status(200).json({ message: "Chat cleared successfully" });
   } catch (error) {
     console.log("Error in clearChat controller", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// ✅ NAYA — Block / Unblock User
+export const blockUser = async (req, res) => {
+  try {
+    const myId = req.user._id;
+    const { id: targetUserId } = req.params;
+
+    if (myId.toString() === targetUserId) {
+      return res.status(400).json({ error: "You cannot block yourself" });
+    }
+
+    const me = await User.findById(myId);
+    const isAlreadyBlocked = me.blockedUsers?.includes(targetUserId);
+
+    if (isAlreadyBlocked) {
+      // Unblock
+      await User.findByIdAndUpdate(myId, {
+        $pull: { blockedUsers: targetUserId },
+      });
+      return res.status(200).json({ message: "User unblocked", blocked: false });
+    } else {
+      // Block
+      await User.findByIdAndUpdate(myId, {
+        $addToSet: { blockedUsers: targetUserId },
+      });
+      return res.status(200).json({ message: "User blocked", blocked: true });
+    }
+  } catch (error) {
+    console.log("Error in blockUser controller", error.message);
     res.status(500).json({ error: "Internal server error" });
   }
 };
