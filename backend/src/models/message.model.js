@@ -12,23 +12,14 @@ const messageSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    text: {
-      type: String,
-    },
-    image: {
-      type: String,
-    },
-    audio: {
-      type: String, // ← Audio URL Cloudinary se
-    },
-    isEdited: {
-      type: Boolean,
-      default: false,
-    },
-    isRead: {
-      type: Boolean,
-      default: false,
-    },
+    text: { type: String },
+    image: { type: String },
+    audio: { type: String },
+    file: { type: String },
+    fileName: { type: String },
+    fileType: { type: String },
+    isEdited: { type: Boolean, default: false },
+    isRead: { type: Boolean, default: false },
     reactions: [
       {
         userId: {
@@ -36,10 +27,14 @@ const messageSchema = new mongoose.Schema(
           ref: "User",
           required: true,
         },
-        emoji: {
-          type: String,
-          required: true,
-        },
+        emoji: { type: String, required: true },
+      },
+    ],
+    // ← Sirf apne side se delete karne ke liye
+    deletedFor: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
       },
     ],
   },
