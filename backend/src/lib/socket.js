@@ -23,38 +23,46 @@ export function getReceiverSocketId(userId){
 const userSocketMap = {}; // {userId: socketId}
 
 io.on("connection", (socket) => {
-    console.log("A user connected", socket.id);
     const userId = socket.handshake.query.userId
     if(userId) userSocketMap[userId] = socket.id
+    console.log("✅ User connected:", userId, "| socketId:", socket.id);
+    console.log("📋 Current userSocketMap:", userSocketMap);
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
-    // ✅ ===== CALLING FEATURE — Signaling Events =====
+    // ===== CALLING FEATURE — Signaling Events =====
 
-    // Caller kisi ko call karta hai
     socket.on("call-user", ({ to, from, offer, callType, callerInfo }) => {
+        console.log(`📞 call-user: from=${from} to=${to}`);
+        console.log("📋 userSocketMap at call time:", userSocketMap);
         const receiverSocketId = getReceiverSocketId(to);
+        console.log("🎯 Resolved receiverSocketId:", receiverSocketId);
         if (receiverSocketId) {
             io.to(receiverSocketId).emit("incoming-call", {
                 from,
                 offer,
-                callType,        // "audio" ya "video"
-                callerInfo,      // { fullName, profilePic } jaisa data dikhane ke liye
+                callType,
+                callerInfo,
             });
+            console.log("✅ incoming-call sent to", receiverSocketId);
         } else {
-            // Receiver online nahi hai
+            console.log("❌ Receiver socketId not found for userId:", to);
             socket.emit("call-failed", { reason: "User is offline" });
         }
     });
 
-    // Receiver call accept karta hai (answer bhejta hai)
     socket.on("answer-call", ({ to, answer }) => {
+        console.log(`✅ answer-call: to=${to}`);
+        console.log("📋 userSocketMap at answer time:", userSocketMap);
         const callerSocketId = getReceiverSocketId(to);
+        console.log("🎯 Resolved callerSocketId:", callerSocketId);
         if (callerSocketId) {
             io.to(callerSocketId).emit("call-answered", { answer });
+            console.log("✅ call-answered sent to", callerSocketId);
+        } else {
+            console.log("❌ Caller socketId not found for userId:", to);
         }
     });
 
-    // Receiver call reject karta hai
     socket.on("reject-call", ({ to }) => {
         const callerSocketId = getReceiverSocketId(to);
         if (callerSocketId) {
@@ -62,7 +70,6 @@ io.on("connection", (socket) => {
         }
     });
 
-    // ICE candidates exchange (WebRTC connection establish karne ke liye zaroori)
     socket.on("ice-candidate", ({ to, candidate }) => {
         const targetSocketId = getReceiverSocketId(to);
         if (targetSocketId) {
@@ -70,7 +77,6 @@ io.on("connection", (socket) => {
         }
     });
 
-    // Koi bhi side call end/cancel kare
     socket.on("end-call", ({ to }) => {
         const targetSocketId = getReceiverSocketId(to);
         if (targetSocketId) {
@@ -78,11 +84,12 @@ io.on("connection", (socket) => {
         }
     });
 
-    // ✅ ===== END Calling Events =====
+    // ===== END Calling Events =====
 
     socket.on("disconnect", () => {
-        console.log("A user disconnected", socket.id);
+        console.log("❌ User disconnected:", userId, "| socketId:", socket.id);
         delete userSocketMap[userId];
+        console.log("📋 userSocketMap after disconnect:", userSocketMap);
         io.emit("getOnlineUsers", Object.keys(userSocketMap));
     })
 });
