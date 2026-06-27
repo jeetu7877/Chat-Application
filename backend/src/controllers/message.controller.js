@@ -47,7 +47,7 @@ export const sendMessage = async (req, res) => {
 
     if (audio) {
       const uploadResponse = await cloudinary.uploader.upload(audio, {
-        resource_type: "video", // Cloudinary audio ke liye "video" use karta hai
+        resource_type: "video",
         folder: "audio_messages",
       });
       audioUrl = uploadResponse.secure_url;
@@ -199,6 +199,26 @@ export const addReaction = async (req, res) => {
     res.status(200).json(message);
   } catch (error) {
     console.log("Error in addReaction controller", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// ── Clear Chat ────────────────────────────────────────────────────────────────
+export const clearChat = async (req, res) => {
+  try {
+    const myId = req.user._id;
+    const { id: otherUserId } = req.params;
+
+    await Message.deleteMany({
+      $or: [
+        { senderId: myId, receiverId: otherUserId },
+        { senderId: otherUserId, receiverId: myId },
+      ],
+    });
+
+    res.status(200).json({ message: "Chat cleared successfully" });
+  } catch (error) {
+    console.log("Error in clearChat controller", error.message);
     res.status(500).json({ error: "Internal server error" });
   }
 };
