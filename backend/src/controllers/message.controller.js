@@ -6,15 +6,11 @@ import { getReceiverSocketId, io } from "../lib/socket.js";
 export const getUsersForSidebar = async (req, res) => {
   try {
     const loggedInUserId = req.user._id;
-
     const loggedInUser = await User.findById(loggedInUserId);
     const blockedUserIds = loggedInUser.blockedUsers || [];
 
     const filteredUsers = await User.find({
-      _id: {
-        $ne: loggedInUserId,
-        $nin: blockedUserIds,
-      },
+      _id: { $ne: loggedInUserId, $nin: blockedUserIds },
     }).select("-password");
 
     const usersWithLastMessage = await Promise.all(
@@ -83,54 +79,40 @@ export const sendMessage = async (req, res) => {
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
-    // ✅ Block check — agar receiver ne humein block kiya hai, to message na bheje
     const receiver = await User.findById(receiverId);
     if (receiver?.blockedUsers?.includes(senderId.toString())) {
       return res.status(403).json({ error: "You cannot message this user" });
     }
 
-    let imageUrl;
-    let audioUrl;
-    let fileUrl;
+    let imageUrl, audioUrl, fileUrl;
 
     if (image) {
       const uploadResponse = await cloudinary.uploader.upload(image);
       imageUrl = uploadResponse.secure_url;
     }
-
     if (audio) {
       const uploadResponse = await cloudinary.uploader.upload(audio, {
-        resource_type: "video",
-        folder: "audio_messages",
+        resource_type: "video", folder: "audio_messages",
       });
       audioUrl = uploadResponse.secure_url;
     }
-
     if (file) {
       const uploadResponse = await cloudinary.uploader.upload(file, {
-        resource_type: "auto",
-        folder: "file_messages",
+        resource_type: "auto", folder: "file_messages",
       });
       fileUrl = uploadResponse.secure_url;
     }
 
     const newMessage = new Message({
-      senderId,
-      receiverId,
-      text,
-      image: imageUrl,
-      audio: audioUrl,
-      file: fileUrl,
-      fileName: fileName || null,
-      fileType: fileType || null,
+      senderId, receiverId, text,
+      image: imageUrl, audio: audioUrl,
+      file: fileUrl, fileName: fileName || null, fileType: fileType || null,
     });
 
     await newMessage.save();
 
     const receiverSocketId = getReceiverSocketId(receiverId);
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("newMessage", newMessage);
-    }
+    if (receiverSocketId) io.to(receiverSocketId).emit("newMessage", newMessage);
 
     res.status(201).json(newMessage);
   } catch (error) {
@@ -143,19 +125,14 @@ export const deleteMessage = async (req, res) => {
   try {
     const { id } = req.params;
     const message = await Message.findById(id);
-
     if (!message) return res.status(404).json({ error: "Message not found" });
-
-    if (message.senderId.toString() !== req.user._id.toString()) {
+    if (message.senderId.toString() !== req.user._id.toString())
       return res.status(401).json({ error: "Unauthorized" });
-    }
 
     await Message.findByIdAndDelete(id);
 
     const receiverSocketId = getReceiverSocketId(message.receiverId);
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("messageDeleted", id);
-    }
+    if (receiverSocketId) io.to(receiverSocketId).emit("messageDeleted", id);
 
     res.status(200).json({ message: "Message deleted" });
   } catch (error) {
@@ -169,21 +146,16 @@ export const editMessage = async (req, res) => {
     const { id } = req.params;
     const { text } = req.body;
     const message = await Message.findById(id);
-
     if (!message) return res.status(404).json({ error: "Message not found" });
-
-    if (message.senderId.toString() !== req.user._id.toString()) {
+    if (message.senderId.toString() !== req.user._id.toString())
       return res.status(401).json({ error: "Unauthorized" });
-    }
 
     message.text = text;
     message.isEdited = true;
     await message.save();
 
     const receiverSocketId = getReceiverSocketId(message.receiverId);
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("messageEdited", message);
-    }
+    if (receiverSocketId) io.to(receiverSocketId).emit("messageEdited", message);
 
     res.status(200).json(message);
   } catch (error) {
@@ -198,35 +170,15 @@ export const markAsRead = async (req, res) => {
     const readReceiptsEnabled = req.query.receipts !== "false";
 
     await Message.updateMany(
-      {
-        senderId: id,
-        receiverId: req.user._id,
-        isRead: false,
-      },
+      { senderId: id, receiverId: req.user._id, isRead: false },
       { isRead: true }
     );
 
-    // Sirf tab sender ko seen batao jab read receipts ON ho
     if (readReceiptsEnabled) {
       const senderSocketId = getReceiverSocketId(id);
       if (senderSocketId) {
-        io.to(senderSocketId).emit("messagesRead", {
-          readBy: req.user._id,
-        });
+        io.to(senderSocketId).emit("messagesRead", { readBy: req.user._id });
       }
-    }
-
-    res.status(200).json({ message: "Messages marked as read" });
-  } catch (error) {
-    console.log("Error in markAsRead controller", error.message);
-    res.status(500).json({ error: "Internal server error" });
-  }
-};
-    const senderSocketId = getReceiverSocketId(id);
-    if (senderSocketId) {
-      io.to(senderSocketId).emit("messagesRead", {
-        readBy: req.user._id,
-      });
     }
 
     res.status(200).json({ message: "Messages marked as read" });
@@ -250,11 +202,9 @@ export const addReaction = async (req, res) => {
     );
 
     if (existingIndex !== -1) {
-      if (message.reactions[existingIndex].emoji === emoji) {
+      if (message.reactions[existingIndex].emoji === emoji)
         message.reactions.splice(existingIndex, 1);
-      } else {
-        message.reactions[existingIndex].emoji = emoji;
-      }
+      else message.reactions[existingIndex].emoji = emoji;
     } else {
       message.reactions.push({ userId, emoji });
     }
@@ -263,19 +213,8 @@ export const addReaction = async (req, res) => {
 
     const receiverSocketId = getReceiverSocketId(message.receiverId);
     const senderSocketId = getReceiverSocketId(message.senderId);
-
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("messageReaction", {
-        messageId: id,
-        reactions: message.reactions,
-      });
-    }
-    if (senderSocketId) {
-      io.to(senderSocketId).emit("messageReaction", {
-        messageId: id,
-        reactions: message.reactions,
-      });
-    }
+    if (receiverSocketId) io.to(receiverSocketId).emit("messageReaction", { messageId: id, reactions: message.reactions });
+    if (senderSocketId) io.to(senderSocketId).emit("messageReaction", { messageId: id, reactions: message.reactions });
 
     res.status(200).json(message);
   } catch (error) {
@@ -284,7 +223,6 @@ export const addReaction = async (req, res) => {
   }
 };
 
-// ✅ "Delete Chat" — clearChat ko hi yahan se use karenge (route me map karenge)
 export const clearChat = async (req, res) => {
   try {
     const myId = req.user._id;
@@ -298,9 +236,7 @@ export const clearChat = async (req, res) => {
         ],
         deletedFor: { $ne: myId },
       },
-      {
-        $addToSet: { deletedFor: myId },
-      }
+      { $addToSet: { deletedFor: myId } }
     );
 
     res.status(200).json({ message: "Chat cleared successfully" });
@@ -310,30 +246,22 @@ export const clearChat = async (req, res) => {
   }
 };
 
-// ✅ NAYA — Block / Unblock User
 export const blockUser = async (req, res) => {
   try {
     const myId = req.user._id;
     const { id: targetUserId } = req.params;
 
-    if (myId.toString() === targetUserId) {
+    if (myId.toString() === targetUserId)
       return res.status(400).json({ error: "You cannot block yourself" });
-    }
 
     const me = await User.findById(myId);
     const isAlreadyBlocked = me.blockedUsers?.includes(targetUserId);
 
     if (isAlreadyBlocked) {
-      // Unblock
-      await User.findByIdAndUpdate(myId, {
-        $pull: { blockedUsers: targetUserId },
-      });
+      await User.findByIdAndUpdate(myId, { $pull: { blockedUsers: targetUserId } });
       return res.status(200).json({ message: "User unblocked", blocked: false });
     } else {
-      // Block
-      await User.findByIdAndUpdate(myId, {
-        $addToSet: { blockedUsers: targetUserId },
-      });
+      await User.findByIdAndUpdate(myId, { $addToSet: { blockedUsers: targetUserId } });
       return res.status(200).json({ message: "User blocked", blocked: true });
     }
   } catch (error) {
