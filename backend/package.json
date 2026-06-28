@@ -20,6 +20,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.24.1",
     "morgan": "^1.11.0",
+    "multer": "^1.4.5-lts.1",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
@@ -27,8 +28,6 @@
     "@types/express": "^5.0.0",
     "@types/morgan": "^1.9.9",
     "nodemon": "^3.1.14"
-    "cloudinary": "^2.0.0",
-  "multer": "^1.4.5-lts.1",
   },
   "description": ""
 }
