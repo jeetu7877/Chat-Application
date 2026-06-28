@@ -36,7 +36,7 @@ const userSchema = new mongoose.Schema(
         default: [],
       },
     ],
-    // ── NAYA: Status Privacy Engine Fields ──────────────────────────────────
+    // ── Status Privacy Engine Fields ──────────────────────────────────
     statusPrivacyType: {
       type: String,
       enum: ["contacts", "except", "only"],
@@ -54,6 +54,22 @@ const userSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         default: [],
+      },
+    ],
+    // ── ✅ NAYA: WhatsApp Chat Lock Engine Fields ──────────────────────
+    chatLockPassword: {
+      type: String,
+      default: "", // Hashed string save hogi yahan setting se
+    },
+    isChatLockSet: {
+      type: Boolean,
+      default: false, // Jab user pehli baar setup karega tab true hoga
+    },
+    lockedChats: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: [], // Jin friends ki chats lock hain, unki IDs yahan aayengi
       },
     ],
   },
