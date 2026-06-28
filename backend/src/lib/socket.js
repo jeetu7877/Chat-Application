@@ -97,25 +97,85 @@ io.on("connection", (socket) => {
     });
 
     // Jab koi move kare
-    socket.on("game:move", ({ roomId, index, symbol }) => {
-        const room = gameRooms[roomId];
-        if (!room) return;
-        if (room.currentTurn !== userId) return; // Sirf apni turn pe move karo
+    socket.on("game:move", ({ roomId, index, symbol, data }) => {
+  const room = gameRooms[roomId];
+  if (!room) return;
 
-        // Board update karo
-        room.board[index] = symbol;
+  // ── TicTacToe move ──
+  if (index !== undefined && symbol !== undefined) {
+    if (room.currentTurn !== userId) return;
 
-        // Turn badlo
-        const nextTurn = room.players.find(p => p !== userId);
-        room.currentTurn = nextTurn;
+    room.board[index] = symbol;
+    const nextTurn = room.players.find(p => p !== userId);
+    room.currentTurn = nextTurn;
 
-        // Dono players ko updated board bhejo
-        io.to(roomId).emit("game:update", {
-            board: room.board,
-            currentTurn: room.currentTurn,
-            lastMove: { index, symbol, by: userId },
-        });
+    io.to(roomId).emit("game:update", {
+      board: room.board,
+      currentTurn: room.currentTurn,
+      lastMove: { index, symbol, by: userId },
     });
+  }
+
+  // ── RPS move ──
+  if (data?.choice) {
+    if (!room.choices) room.choices = {};
+    room.choices[userId] = data;
+
+    // Jab dono players ne choose kar liya
+    if (Object.keys(room.choices).length === 2) {
+      const [p1Id, p2Id] = room.players;
+      const p1Choice = room.choices[p1Id]?.choice;
+      const p2Choice = room.choices[p2Id]?.choice;
+      const currentScore = room.choices[p1Id]?.currentScore || { player: 0, ai: 0, draw: 0 };
+      const roundNum = room.choices[p1Id]?.round || 1;
+
+      const getChoiceResult = (a, b) => {
+        if (a === b) return "draw";
+        const BEATS = { rock: "scissors", scissors: "paper", paper: "rock" };
+        return BEATS[a] === b ? "win" : "loss";
+      };
+
+      const p1Result = getChoiceResult(p1Choice, p2Choice);
+      const newScore = { ...currentScore };
+      if (p1Result === "win") newScore.player += 1;
+      else if (p1Result === "loss") newScore.ai += 1;
+      else newScore.draw += 1;
+
+      // P1 ko result bhejo
+      const p1SocketId = getReceiverSocketId(p1Id);
+      if (p1SocketId) {
+        io.to(p1SocketId).emit("game:update", {
+          data: {
+            myChoiceServer: p1Choice,
+            opponentChoiceServer: p2Choice,
+            roundResult: p1Result,
+            newScore,
+            roundNum,
+          }
+        });
+      }
+
+      // P2 ko result bhejo
+      const p2Result = p1Result === "win" ? "loss" : p1Result === "loss" ? "win" : "draw";
+      const p2Score = { player: newScore.ai, ai: newScore.player, draw: newScore.draw };
+      const p2SocketId = getReceiverSocketId(p2Id);
+      if (p2SocketId) {
+        io.to(p2SocketId).emit("game:update", {
+          data: {
+            myChoiceServer: p2Choice,
+            opponentChoiceServer: p1Choice,
+            roundResult: p2Result,
+            newScore: p2Score,
+            roundNum,
+          }
+        });
+      }
+
+      // Reset choices for next round
+      room.choices = {};
+    }
+  }
+});
 
     // Game khatam
     socket.on("game:over", ({ roomId, result }) => {
