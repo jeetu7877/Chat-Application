@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import http from "http";
 import express from "express";
+import User from "../models/user.model.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -22,6 +23,18 @@ export function getReceiverSocketId(userId){
 }
 
 const userSocketMap = {};
+
+// ── Online Visibility ──────────────────────────────────────────────────────────
+// In-memory cache: kis userId ne apna online status hide kiya hai
+const hiddenStatusUsers = new Set();
+
+// Sirf wahi userIds bhejo jo connected hain AND hide nahi kiya hai
+const broadcastOnlineUsers = () => {
+    const visibleUserIds = Object.keys(userSocketMap).filter(
+        (id) => !hiddenStatusUsers.has(id)
+    );
+    io.emit("getOnlineUsers", visibleUserIds);
+};
 
 // ── Game Rooms ────────────────────────────────────────────────────────────────
 const gameRooms = {};
@@ -45,15 +58,38 @@ const checkTTTWinner = (board) => {
 
 const MAX_GTN_ATTEMPTS = 7;
 
-io.on("connection", (socket) => {
+io.on("connection", async (socket) => {
     const userId = socket.handshake.query.userId;
 
     if (userId && userId !== "undefined") {
         userSocketMap[userId] = socket.id;
+
+        // ✅ Connect hote hi DB se check karo ki user ne status hide kiya hai ya nahi
+        try {
+            const user = await User.findById(userId).select("hideOnlineStatus");
+            if (user?.hideOnlineStatus) {
+                hiddenStatusUsers.add(userId);
+            } else {
+                hiddenStatusUsers.delete(userId);
+            }
+        } catch (err) {
+            console.log("Error checking hideOnlineStatus:", err.message);
+        }
     }
 
     console.log("✅ User connected:", userId);
-    io.emit("getOnlineUsers", Object.keys(userSocketMap));
+    broadcastOnlineUsers();
+
+    // ── Online Visibility toggle (real-time, bina reconnect ke) ────────────────
+    socket.on("update:hideOnlineStatus", ({ hide }) => {
+        if (!userId) return;
+        if (hide) {
+            hiddenStatusUsers.add(userId);
+        } else {
+            hiddenStatusUsers.delete(userId);
+        }
+        broadcastOnlineUsers();
+    });
 
     // ── Typing ────────────────────────────────────────────────────────────────
     socket.on("typing", ({ receiverId }) => {
@@ -204,8 +240,6 @@ io.on("connection", (socket) => {
         }
 
         // ── GTN move ────────────────────────────────────────────────────────
-        // ✅ NAYA LOGIC: round tab tak over nahi hoga jab tak DONO "finish" na ho jayein
-        // (finish = solve kiya YA max attempts khatam ho gaye)
         if (data?.type === "guess") {
             const { attempts: attemptCount, correct, failed } = data;
 
@@ -214,7 +248,6 @@ io.on("connection", (socket) => {
             const opponentId = room.players.find(p => p !== userId);
             const opponentSid = getReceiverSocketId(opponentId);
 
-            // Opponent ko progress batao (guess number nahi, sirf status)
             if (opponentSid) {
                 io.to(opponentSid).emit("game:update", {
                     data: {
@@ -236,7 +269,6 @@ io.on("connection", (socket) => {
             const iFinished = room.gtnFinished[userId];
             const oppFinished = room.gtnFinished[opponentId];
 
-            // Dono finish honge tabhi winner decide hoga
             if (iFinished && oppFinished) {
                 const iSolved = room.gtnSolved[userId];
                 const oppSolved = room.gtnSolved[opponentId];
@@ -245,16 +277,15 @@ io.on("connection", (socket) => {
 
                 let winner;
                 if (iSolved && oppSolved) {
-                    // Dono solve — kam attempts wala jeeta
                     if (myAttempts < oppAttempts) winner = userId;
                     else if (oppAttempts < myAttempts) winner = opponentId;
-                    else winner = "draw"; // attempts bhi equal
+                    else winner = "draw";
                 } else if (iSolved) {
                     winner = userId;
                 } else if (oppSolved) {
                     winner = opponentId;
                 } else {
-                    winner = "draw"; // dono fail — koi winner nahi
+                    winner = "draw";
                 }
 
                 io.to(roomId).emit("game:update", {
@@ -273,7 +304,6 @@ io.on("connection", (socket) => {
                 });
                 delete gameRooms[roomId];
             }
-            // else: ek hi player finish hua — opponent ka wait karo
         }
 
         // ── RPS move ────────────────────────────────────────────────────────
@@ -320,7 +350,6 @@ io.on("connection", (socket) => {
         }
 
         // ── EQ move ───────────────────────────────────────────────────────────
-        // ✅ FIX: ye block pehle game:move handler ke BAHAR tha (bug), ab andar hai
         if (data?.type === "eq_progress") {
             const { score, finished } = data;
             if (!room.eqScores) room.eqScores = {};
@@ -410,8 +439,9 @@ io.on("connection", (socket) => {
         console.log("❌ User disconnected:", userId);
         if (userId && userId !== "undefined") {
             delete userSocketMap[userId];
+            hiddenStatusUsers.delete(userId); // cleanup
         }
-        io.emit("getOnlineUsers", Object.keys(userSocketMap));
+        broadcastOnlineUsers();
     });
 });
 
