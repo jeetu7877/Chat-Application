@@ -9,7 +9,7 @@ import morgan from "morgan";
 import { app, server } from "./lib/socket.js";
 import path from "path";
 import gameRoutes from "./routes/game.route.js";
-import mediaRoutes from "./routes/media.route.js"; // ✅ Added Media Studio Routes Import
+import mediaRoutes from "./routes/media.routes.js"; // ✅ यहाँ .route.js को बदलकर .routes.js कर दिया है
 
 dotenv.config();
 const PORT = process.env.PORT;
@@ -38,7 +38,7 @@ app.get("/ping", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/game", gameRoutes);
-app.use("/api/media", mediaRoutes); // ✅ Registered Camera Studio Endpoints Group
+app.use("/api/media", mediaRoutes);
 
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../frontend/dist")));
