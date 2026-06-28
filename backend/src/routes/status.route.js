@@ -6,8 +6,10 @@ import {
   getFriendsStatuses,
   viewStatus,
   deleteStatus,
-  toggleLikeStatus, // ✅ NAYA
-  replyStatus,      // ✅ NAYA
+  toggleLikeStatus,
+  replyStatus,
+  getStatusPrivacy,   // ✅ NAYA: Privacy Controller Import
+  updateStatusPrivacy, // ✅ NAYA: Privacy Controller Import
 } from "../controllers/status.controller.js";
 
 const router = express.Router();
@@ -19,8 +21,12 @@ router.get("/friends",        protectRoute, getFriendsStatuses);
 router.post("/view/:statusId", protectRoute, viewStatus);
 router.delete("/:statusId",   protectRoute, deleteStatus);
 
-// ── NAYE ENDPOINTS ───────────────────────────────────────────────────────────
-router.post("/like/:statusId", protectRoute, toggleLikeStatus); // ✅ Like toggle route
-router.post("/reply/:statusId", protectRoute, replyStatus);     // ✅ Reply status route
+// ── LIKE & REPLY ENDPOINTS ───────────────────────────────────────────────────
+router.post("/like/:statusId", protectRoute, toggleLikeStatus); 
+router.post("/reply/:statusId", protectRoute, replyStatus);     
+
+// ── NAYE PRIVACY ENDPOINTS ───────────────────────────────────────────────────
+router.get("/privacy",        protectRoute, getStatusPrivacy);   // ✅ Privacy settings fetch karne ke liye
+router.put("/privacy",        protectRoute, updateStatusPrivacy); // ✅ Privacy settings update karne ke liye
 
 export default router;
