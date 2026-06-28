@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+
 const userSchema = new mongoose.Schema(
   {
     email: {
@@ -35,8 +36,29 @@ const userSchema = new mongoose.Schema(
         default: [],
       },
     ],
+    // ── NAYA: Status Privacy Engine Fields ──────────────────────────────────
+    statusPrivacyType: {
+      type: String,
+      enum: ["contacts", "except", "only"],
+      default: "contacts",
+    },
+    statusAllowedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: [],
+      },
+    ],
+    statusExcludedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: [],
+      },
+    ],
   },
   { timestamps: true }
 );
+
 const User = mongoose.model("User", userSchema);
 export default User;
