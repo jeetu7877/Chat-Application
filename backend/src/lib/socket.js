@@ -26,7 +26,6 @@ const userSocketMap = {};
 // ── Game Rooms ────────────────────────────────────────────────────────────────
 const gameRooms = {};
 
-// ── TicTacToe Winner Check ────────────────────────────────────────────────────
 const WINNING_LINES = [
   [0,1,2],[3,4,5],[6,7,8],
   [0,3,6],[1,4,7],[2,5,8],
@@ -35,16 +34,12 @@ const WINNING_LINES = [
 
 const checkTTTWinner = (board) => {
   for (const [a,b,c] of WINNING_LINES) {
-    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+    if (board[a] && board[a] === board[b] && board[a] === board[c])
       return { winner: board[a], line: [a,b,c] };
-    }
   }
   if (board.every(Boolean)) return { winner: "draw", line: [] };
   return null;
 };
-
-// ── GTN: Compare two guesses ──────────────────────────────────────────────────
-const MAX_GTN_ATTEMPTS = 7;
 
 io.on("connection", (socket) => {
     const userId = socket.handshake.query.userId;
@@ -72,18 +67,15 @@ io.on("connection", (socket) => {
         socket.join(roomId);
 
         if (!gameRooms[roomId]) {
-            // Pehla player — room banao, wait karo
             gameRooms[roomId] = {
                 gameId,
                 players: [userId],
                 board: Array(9).fill(null),
                 currentTurn: null,
                 status: "waiting",
-                // GTN ke liye
-                gtnTargets: {},      // { userId: randomNumber }
-                gtnAttempts: {},     // { userId: count }
-                gtnSolved: {},       // { userId: true/false }
-                // RPS ke liye
+                gtnTargets: {},
+                gtnAttempts: {},
+                gtnSolved: {},
                 choices: {},
                 roundScores: {},
             };
@@ -110,46 +102,30 @@ io.on("connection", (socket) => {
                 });
             }
 
-            // ── GTN start: server dono ko alag alag target deta hai ──
+            // ── GTN start ──
             if (gameId === "gtn") {
                 room.gtnAttempts = { [room.players[0]]: 0, [room.players[1]]: 0 };
                 room.gtnSolved   = { [room.players[0]]: false, [room.players[1]]: false };
-
-                // Dono ke liye alag random number
                 const t0 = Math.floor(Math.random() * 100) + 1;
                 const t1 = Math.floor(Math.random() * 100) + 1;
-                room.gtnTargets = {
-                    [room.players[0]]: t0,
-                    [room.players[1]]: t1,
-                };
-
-                // Har player ko sirf apna target milega
+                room.gtnTargets = { [room.players[0]]: t0, [room.players[1]]: t1 };
                 const s0 = getReceiverSocketId(room.players[0]);
                 const s1 = getReceiverSocketId(room.players[1]);
                 if (s0) io.to(s0).emit("game:start", { roomId, data: { target: t0 } });
                 if (s1) io.to(s1).emit("game:start", { roomId, data: { target: t1 } });
             }
 
-            // ── RPS start ──
             // ── EQ start ──
             if (gameId === "eq") {
-                room.eqScores = {
-                    [room.players[0]]: 0,
-                    [room.players[1]]: 0,
-                };
+                room.eqScores = { [room.players[0]]: 0, [room.players[1]]: 0 };
                 room.eqFinished = {};
-                io.to(roomId).emit("game:start", {
-                    roomId,
-                    players: room.players,
-                });
+                io.to(roomId).emit("game:start", { roomId, players: room.players });
             }
+
+            // ── RPS start ──
             if (gameId === "rps") {
                 room.choices = {};
-                room.roundScores = {
-                    [room.players[0]]: 0,
-                    [room.players[1]]: 0,
-                    draws: 0,
-                };
+                room.roundScores = { [room.players[0]]: 0, [room.players[1]]: 0, draws: 0 };
                 io.to(roomId).emit("game:start", {
                     roomId,
                     players: room.players,
@@ -167,10 +143,10 @@ io.on("connection", (socket) => {
         const room = gameRooms[roomId];
         if (!room) return;
 
-        // ── TicTacToe move ──────────────────────────────────────────────────
+        // ── TTT move ──
         if (index !== undefined && symbol !== undefined) {
-            if (room.currentTurn !== userId) return; // not your turn
-            if (room.board[index]) return;            // cell already filled
+            if (room.currentTurn !== userId) return;
+            if (room.board[index]) return;
 
             room.board[index] = symbol;
             const nextTurn = room.players.find(p => p !== userId);
@@ -179,25 +155,20 @@ io.on("connection", (socket) => {
             const result = checkTTTWinner(room.board);
 
             if (result) {
-                // Game over
                 let winnerId = null;
                 if (result.winner !== "draw") {
-                    // assignments: players[0] = X, players[1] = O
                     winnerId = result.winner === "X" ? room.players[0] : room.players[1];
                 }
-
                 io.to(roomId).emit("game:update", {
                     board: room.board,
                     currentTurn: null,
                     lastMove: { index, symbol, by: userId },
                 });
-
                 io.to(roomId).emit("game:over", {
-                    winner: result.winner,   // "X" | "O" | "draw"
-                    winnerId,                // userId of winner | null
+                    winner: result.winner,
+                    winnerId,
                     line: result.line,
                 });
-
                 delete gameRooms[roomId];
             } else {
                 io.to(roomId).emit("game:update", {
@@ -208,17 +179,13 @@ io.on("connection", (socket) => {
             }
         }
 
-        // ── GTN move ────────────────────────────────────────────────────────
+        // ── GTN move ──
         if (data?.type === "guess") {
             const { guess, attempts: attemptCount, correct, failed } = data;
-            const target = room.gtnTargets[userId];
-
             room.gtnAttempts[userId] = attemptCount;
-
             const opponentId = room.players.find(p => p !== userId);
             const opponentSid = getReceiverSocketId(opponentId);
 
-            // Opponent ko batao kitne attempts liye (guess nahi batao!)
             if (opponentSid) {
                 io.to(opponentSid).emit("game:update", {
                     data: {
@@ -232,49 +199,34 @@ io.on("connection", (socket) => {
             if (correct) {
                 room.gtnSolved[userId] = true;
                 const opponentSolved = room.gtnSolved[opponentId];
-
                 if (opponentSolved) {
-                    // Dono ne solve kiya — compare attempts
                     const myAttempts  = room.gtnAttempts[userId];
                     const oppAttempts = room.gtnAttempts[opponentId];
                     let winner;
                     if (myAttempts < oppAttempts)       winner = userId;
                     else if (oppAttempts < myAttempts)  winner = opponentId;
                     else                                  winner = "draw";
-
-                    io.to(roomId).emit("game:update", {
-                        data: { type: "round_over", winner }
-                    });
+                    io.to(roomId).emit("game:update", { data: { type: "round_over", winner } });
                     delete gameRooms[roomId];
                 } else {
-                    // Sirf maine solve kiya — main win
-                    io.to(roomId).emit("game:update", {
-                        data: { type: "round_over", winner: userId }
-                    });
+                    io.to(roomId).emit("game:update", { data: { type: "round_over", winner: userId } });
                     delete gameRooms[roomId];
                 }
             } else if (failed) {
-                // Maine attempts khatam kar diye
                 room.gtnSolved[userId] = false;
                 const opponentSolved = room.gtnSolved[opponentId];
-
                 if (opponentSolved !== undefined && room.gtnAttempts[opponentId] > 0) {
-                    // Opponent already done hai
-                    io.to(roomId).emit("game:update", {
-                        data: { type: "round_over", winner: opponentId }
-                    });
+                    io.to(roomId).emit("game:update", { data: { type: "round_over", winner: opponentId } });
                     delete gameRooms[roomId];
                 }
-                // else: wait for opponent to finish
             }
         }
 
-        // ── RPS move ────────────────────────────────────────────────────────
+        // ── RPS move ──
         if (data?.choice) {
             if (!room.choices) room.choices = {};
             room.choices[userId] = data;
 
-            // Jab dono players ne choose kar liya
             if (Object.keys(room.choices).length === 2) {
                 const [p1Id, p2Id] = room.players;
                 const p1Choice = room.choices[p1Id]?.choice;
@@ -312,19 +264,17 @@ io.on("connection", (socket) => {
                 room.choices = {};
             }
         }
-    });
-    // ── EQ move ──────────────────────────────────────────────────────────
+
+        // ── EQ move ──
         if (data?.type === "eq_progress") {
             const { score, finished } = data;
             if (!room.eqScores) room.eqScores = {};
             if (!room.eqFinished) room.eqFinished = {};
 
             room.eqScores[userId] = score;
-
             const oppId = room.players.find(p => p !== userId);
             const oppSid = getReceiverSocketId(oppId);
 
-            // Opponent ko progress batao
             if (oppSid) {
                 io.to(oppSid).emit("game:update", {
                     data: {
@@ -337,8 +287,6 @@ io.on("connection", (socket) => {
 
             if (finished) {
                 room.eqFinished[userId] = true;
-
-                // Dono finish ho gaye?
                 if (room.eqFinished[oppId]) {
                     const myScore  = room.eqScores[userId];
                     const oppScore = room.eqScores[oppId];
@@ -346,16 +294,14 @@ io.on("connection", (socket) => {
                     if (myScore > oppScore)       winner = userId;
                     else if (oppScore > myScore)  winner = oppId;
                     else                           winner = "draw";
-
-                    io.to(roomId).emit("game:update", {
-                        data: { type: "round_over", winner }
-                    });
+                    io.to(roomId).emit("game:update", { data: { type: "round_over", winner } });
                     delete gameRooms[roomId];
                 }
-                // else: wait for opponent to finish
             }
         }
-    // ── Game: Over (client side se) ──────────────────────────────────────────
+    }); // ← game:move end
+
+    // ── Game: Over ────────────────────────────────────────────────────────────
     socket.on("game:over", ({ roomId, result }) => {
         const room = gameRooms[roomId];
         if (!room) return;
