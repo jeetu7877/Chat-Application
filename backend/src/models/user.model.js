@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-
 const userSchema = new mongoose.Schema(
   {
     email: {
@@ -20,6 +19,15 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    about: {
+      type: String,
+      default: "",
+      maxlength: 100,
+    },
+    hideOnlineStatus: {
+      type: Boolean,
+      default: false,
+    },
     blockedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -30,6 +38,5 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
 const User = mongoose.model("User", userSchema);
 export default User;
