@@ -58,22 +58,39 @@ export const getUsersForSidebar = async (req, res) => {
 };
 
 // ── ✅ NAYA: Set Chat Lock Password ──────────────────────────────────────────
+// ── ✅ SECURITY UPGRADE: Set/Update Chat Lock Password with Old Password Verification ──
 export const setLockPassword = async (req, res) => {
   try {
-    const { password } = req.body;
+    const { password, oldPassword } = req.body;
     const userId = req.user._id;
 
     if (!password || password.length < 4) {
       return res.status(400).json({ error: "Password must be at least 4 characters long" });
     }
 
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    // 🔒 VERIFICATION LOGIC: Agar user pehle se password set kar chuka hai (Reset Mode)
+    if (user.isChatLockSet && user.chatLockPassword) {
+      if (!oldPassword) {
+        return res.status(400).json({ error: "Current password is required to change settings" });
+      }
+
+      // Backend database se hashed purana password compare karega
+      const isMatch = await bcrypt.compare(oldPassword, user.chatLockPassword);
+      if (!isMatch) {
+        return res.status(400).json({ error: "Incorrect current password. Verification failed." });
+      }
+    }
+
+    // Agar first-time user hai ya purana password successfully match ho gaya hai, toh naya hash karo
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    await User.findByIdAndUpdate(userId, {
-      chatLockPassword: hashedPassword,
-      isChatLockSet: true,
-    });
+    user.chatLockPassword = hashedPassword;
+    user.isChatLockSet = true;
+    await user.save();
 
     res.status(200).json({ message: "Chat lock password configured successfully" });
   } catch (error) {
@@ -81,7 +98,6 @@ export const setLockPassword = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
-
 // ── ✅ NAYA: Verify Chat Lock Password ───────────────────────────────────────
 export const verifyLockPassword = async (req, res) => {
   try {
