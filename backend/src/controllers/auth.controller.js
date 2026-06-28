@@ -59,16 +59,27 @@ export const logout = (req, res) => {
   }
 };
 
+// ✅ UPDATED — ab profilePic, fullName, email, about, hideOnlineStatus sab handle karta hai
 export const updateProfile = async (req, res) => {
   try {
-    const { profilePic } = req.body;
+    const { profilePic, fullName, email, about, hideOnlineStatus } = req.body;
     const userId = req.user._id;
-    if (!profilePic)
-      return res.status(400).json({ message: "Profile pic is required" });
-    const uploadResponse = await cloudinary.uploader.upload(profilePic);
+
+    const updateFields = {};
+
+    if (profilePic) {
+      const uploadResponse = await cloudinary.uploader.upload(profilePic);
+      updateFields.profilePic = uploadResponse.secure_url;
+    }
+    if (fullName !== undefined) updateFields.fullName = fullName;
+    if (email !== undefined) updateFields.email = email;
+    if (about !== undefined) updateFields.about = about;
+    if (hideOnlineStatus !== undefined) updateFields.hideOnlineStatus = hideOnlineStatus;
+
     const updatedUser = await User.findByIdAndUpdate(
-      userId, { profilePic: uploadResponse.secure_url }, { new: true }
-    );
+      userId, updateFields, { new: true }
+    ).select("-password");
+
     res.status(200).json(updatedUser);
   } catch (error) {
     console.log("error in update profile:", error.message);
@@ -92,7 +103,6 @@ export const getAllUsers = async (req, res) => {
     const me = await User.findById(myId).select("blockedUsers");
     const blockedByMe = me.blockedUsers || [];
 
-    // Jin logon ne mujhe block kiya hai
     const usersWhoBlockedMe = await User.find({ blockedUsers: myId }).select("_id");
     const blockedMeIds = usersWhoBlockedMe.map(u => u._id);
 
