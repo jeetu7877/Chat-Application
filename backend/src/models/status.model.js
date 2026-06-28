@@ -27,6 +27,13 @@ const statusSchema = new mongoose.Schema(
         viewedAt: { type: Date, default: Date.now },
       },
     ],
+    // ✅ NAYA: Likes track karne ke liye array of User ObjectIds
+    likes: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
     expireAt: {
       type: Date,
       default: () => new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
