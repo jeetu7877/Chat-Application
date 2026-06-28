@@ -2,6 +2,8 @@ import Status from "../models/status.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
 import User from "../models/user.model.js";
+// 🚨 NOTE: Agar tumhara Message model kisi aur path par hai toh path sahi kar lena
+import Message from "../models/message.model.js"; 
 
 // ── Upload Status ─────────────────────────────────────────────────────────────
 export const uploadStatus = async (req, res) => {
@@ -13,7 +15,6 @@ export const uploadStatus = async (req, res) => {
       return res.status(400).json({ message: "Media URL and type are required" });
     }
 
-    // Cloudinary pe upload karo
     const resourceType = mediaType === "video" ? "video" : "image";
     const uploaded = await cloudinary.uploader.upload(mediaUrl, {
       resource_type: resourceType,
@@ -25,12 +26,11 @@ export const uploadStatus = async (req, res) => {
       mediaUrl: uploaded.secure_url,
       mediaType,
       caption: caption || "",
+      likes: [], // Initializing empty likes array
     });
 
-    // Populate user info
     await status.populate("user", "fullName profilePic");
 
-    // ✅ Socket.io — friends ko instantly notify karo
     io.emit("status:new", {
       status: {
         _id: status._id,
@@ -41,6 +41,7 @@ export const uploadStatus = async (req, res) => {
         createdAt: status.createdAt,
         expireAt: status.expireAt,
         viewedBy: [],
+        likes: [],
       },
     });
 
@@ -62,7 +63,8 @@ export const getMyStatuses = async (req, res) => {
       expireAt: { $gt: now },
     })
       .populate("user", "fullName profilePic")
-      .populate("viewedBy.user", "fullName profilePic") // ✅ Sahi h
+      .populate("viewedBy.user", "fullName profilePic")
+      .populate("likes", "fullName profilePic") // ✅ NAYA: Likes user detail populate
       .sort({ createdAt: -1 });
 
     res.status(200).json(statuses);
@@ -78,15 +80,14 @@ export const getFriendsStatuses = async (req, res) => {
     const userId = req.user._id;
     const now = new Date();
 
-    // Saare users ke statuses fetch karo (except self)
     const statuses = await Status.find({
       user: { $ne: userId },
       expireAt: { $gt: now },
     })
       .populate("user", "fullName profilePic")
+      .populate("likes", "fullName profilePic") // ✅ NAYA: Friend updates me populate likes
       .sort({ createdAt: -1 });
 
-    // Group by userId
     const grouped = {};
     statuses.forEach((s) => {
       const uid = s.user._id.toString();
@@ -100,7 +101,6 @@ export const getFriendsStatuses = async (req, res) => {
       }
       grouped[uid].statuses.push(s);
 
-      // Check if current user has seen this status
       const seen = s.viewedBy.some(
         (v) => v.user?.toString() === userId.toString()
       );
@@ -127,7 +127,6 @@ export const viewStatus = async (req, res) => {
     const status = await Status.findById(statusId);
     if (!status) return res.status(404).json({ message: "Status not found" });
 
-    // Apna khud ka status view check
     if (status.user.toString() === userId.toString()) {
       return res.status(200).json({ message: "Own status" });
     }
@@ -140,11 +139,8 @@ export const viewStatus = async (req, res) => {
       status.viewedBy.push({ user: userId, viewedAt: new Date() });
       await status.save();
 
-      // ✅ FIX: Emit karne se pehle save hue user data ko complete populate karo
-      // Taaki live socket par bhi details instantly update ho sakein
       await status.populate("viewedBy.user", "fullName profilePic");
 
-      // Naya added viewer object extract karo socket ke liye
       const newViewerData = status.viewedBy.find(
         (v) => v.user?._id.toString() === userId.toString()
       );
@@ -153,18 +149,94 @@ export const viewStatus = async (req, res) => {
       if (ownerSocketId) {
         io.to(ownerSocketId).emit("status:viewed", {
           statusId,
-          // ✅ Sirf ID bhejne ke bajay structured data bhej rahe hain
           viewer: newViewerData, 
         });
       }
     }
 
-    // Response me updated status data bhejo frontend store sync ke liye
     await status.populate("viewedBy.user", "fullName profilePic");
+    await status.populate("likes", "fullName profilePic"); // Sync likes info
     res.status(200).json(status);
   } catch (error) {
     console.error("Error viewing status:", error);
     res.status(500).json({ message: "Failed to mark status as viewed" });
+  }
+};
+
+// ── NAYA: Toggle Like Status ──────────────────────────────────────────────────
+export const toggleLikeStatus = async (req, res) => {
+  try {
+    const { statusId } = req.params;
+    const userId = req.user._id;
+
+    const status = await Status.findById(statusId);
+    if (!status) return res.status(404).json({ message: "Status not found" });
+
+    const likeIndex = status.likes.indexOf(userId);
+    let isLiked = false;
+
+    if (likeIndex === -1) {
+      status.likes.push(userId);
+      isLiked = true;
+    } else {
+      status.likes.splice(likeIndex, 1);
+    }
+
+    await status.save();
+    await status.populate("likes", "fullName profilePic");
+
+    // Socket to notify status owner and viewers instantly
+    io.emit("status:liked", {
+      statusId,
+      likes: status.likes,
+      userId,
+    });
+
+    res.status(200).json({ message: isLiked ? "Status liked" : "Status unliked", likes: status.likes });
+  } catch (error) {
+    console.error("Error toggling status like:", error);
+    res.status(500).json({ message: "Failed to handle like execution" });
+  }
+};
+
+// ── NAYA: Reply to Status (WhatsApp Style Chat injection) ────────────────────
+export const replyStatus = async (req, res) => {
+  try {
+    const { statusId } = req.params;
+    const { text } = req.body; // Custom message text sent from bottom sheet input
+    const senderId = req.user._id;
+
+    if (!text || text.trim() === "") {
+      return res.status(400).json({ message: "Reply text cannot be empty" });
+    }
+
+    const status = await Status.findById(statusId).populate("user");
+    if (!status) return res.status(404).json({ message: "Status not found" });
+
+    const receiverId = status.user._id;
+
+    // Construct reply dynamic contextual bubble message formatting for existing core chat scheme
+    const formattedText = `💬 Replied to status:\n"${text}"`;
+
+    // Normal message collection instance creation mechanism
+    const newMessage = await Message.create({
+      senderId,
+      receiverId,
+      text: formattedText,
+      // Optional fields: Agar message model image attachments link arrays support karta ho
+      image: status.mediaType === "image" ? status.mediaUrl : null, 
+    });
+
+    // Notify user directly inside specific room channel execution
+    const receiverSocketId = getReceiverSocketId(receiverId.toString());
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("newMessage", newMessage);
+    }
+
+    res.status(201).json({ message: "Reply sent as a message", chatMessage: newMessage });
+  } catch (error) {
+    console.error("Error replying to status:", error);
+    res.status(500).json({ message: "Failed to process reply text delivery" });
   }
 };
 
