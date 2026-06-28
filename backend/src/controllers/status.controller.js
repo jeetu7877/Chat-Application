@@ -2,10 +2,63 @@ import Status from "../models/status.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
 import User from "../models/user.model.js";
-// 🚨 NOTE: Agar tumhara Message model kisi aur path par hai toh path sahi kar lena
 import Message from "../models/message.model.js"; 
 
-// ── Upload Status ─────────────────────────────────────────────────────────────
+// ── NAYA: Get Status Privacy Settings ─────────────────────────────────────────
+export const getStatusPrivacy = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const user = await User.findById(userId)
+      .populate("statusAllowedUsers", "fullName profilePic email")
+      .populate("statusExcludedUsers", "fullName profilePic email");
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.status(200).json({
+      privacyType: user.statusPrivacyType || "contacts",
+      allowedUsers: user.statusAllowedUsers || [],
+      excludedUsers: user.statusExcludedUsers || [],
+    });
+  } catch (error) {
+    console.error("Error fetching status privacy:", error);
+    res.status(500).json({ message: "Failed to fetch status privacy settings" });
+  }
+};
+
+// ── NAYA: Update Status Privacy Settings ──────────────────────────────────────
+export const updateStatusPrivacy = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { privacyType, allowedUsers, excludedUsers } = req.body;
+
+    if (!["contacts", "except", "only"].includes(privacyType)) {
+      return res.status(400).json({ message: "Invalid privacy type structure" });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        statusPrivacyType: privacyType,
+        statusAllowedUsers: privacyType === "only" ? allowedUsers : [],
+        statusExcludedUsers: privacyType === "except" ? excludedUsers : [],
+      },
+      { new: true }
+    )
+      .populate("statusAllowedUsers", "fullName profilePic email")
+      .populate("statusExcludedUsers", "fullName profilePic email");
+
+    res.status(200).json({
+      privacyType: updatedUser.statusPrivacyType,
+      allowedUsers: updatedUser.statusAllowedUsers,
+      excludedUsers: updatedUser.statusExcludedUsers,
+    });
+  } catch (error) {
+    console.error("Error updating status privacy:", error);
+    res.status(500).json({ message: "Failed to update status privacy settings" });
+  }
+};
+
+// ── Upload Status (With Socket Privacy Filtering) ─────────────────────────────
 export const uploadStatus = async (req, res) => {
   try {
     const { mediaUrl, mediaType, caption } = req.body;
@@ -26,12 +79,17 @@ export const uploadStatus = async (req, res) => {
       mediaUrl: uploaded.secure_url,
       mediaType,
       caption: caption || "",
-      likes: [], // Initializing empty likes array
+      likes: [],
     });
 
     await status.populate("user", "fullName profilePic");
 
-    io.emit("status:new", {
+    // ✅ NAYA: Fetch status owner to check visibility array parameters
+    const owner = await User.findById(userId);
+    const allUsers = await User.find({ _id: { $ne: userId } });
+
+    // Stream status parameters packet structure
+    const statusData = {
       status: {
         _id: status._id,
         user: status.user,
@@ -43,6 +101,27 @@ export const uploadStatus = async (req, res) => {
         viewedBy: [],
         likes: [],
       },
+    };
+
+    // ✅ NAYA: Loop targets targeted socket rooms dynamically instead of generic io.emit
+    allUsers.forEach((u) => {
+      let isEligible = false;
+      const targetIdStr = u._id.toString();
+
+      if (owner.statusPrivacyType === "contacts") {
+        isEligible = true;
+      } else if (owner.statusPrivacyType === "except") {
+        isEligible = !owner.statusExcludedUsers.some((id) => id.toString() === targetIdStr);
+      } else if (owner.statusPrivacyType === "only") {
+        isEligible = owner.statusAllowedUsers.some((id) => id.toString() === targetIdStr);
+      }
+
+      if (isEligible) {
+        const socketId = getReceiverSocketId(targetIdStr);
+        if (socketId) {
+          io.to(socketId).emit("status:new", statusData);
+        }
+      }
     });
 
     res.status(201).json(status);
@@ -64,7 +143,7 @@ export const getMyStatuses = async (req, res) => {
     })
       .populate("user", "fullName profilePic")
       .populate("viewedBy.user", "fullName profilePic")
-      .populate("likes", "fullName profilePic") // ✅ NAYA: Likes user detail populate
+      .populate("likes", "fullName profilePic") 
       .sort({ createdAt: -1 });
 
     res.status(200).json(statuses);
@@ -74,26 +153,53 @@ export const getMyStatuses = async (req, res) => {
   }
 };
 
-// ── Get Friends' Statuses ─────────────────────────────────────────────────────
+// ── Get Friends' Statuses (With Database Privacy Matching) ───────────────────
 export const getFriendsStatuses = async (req, res) => {
   try {
     const userId = req.user._id;
     const now = new Date();
 
-    const statuses = await Status.find({
+    // 1. Fetch statuses of friends with populated ownership reference
+    const rawStatuses = await Status.find({
       user: { $ne: userId },
       expireAt: { $gt: now },
     })
-      .populate("user", "fullName profilePic")
-      .populate("likes", "fullName profilePic") // ✅ NAYA: Friend updates me populate likes
+      .populate("user") 
+      .populate("likes", "fullName profilePic")
       .sort({ createdAt: -1 });
 
+    // 2. Filter statuses array dynamically matching owner configuration rules
+    const visibleStatuses = [];
+
+    for (const s of rawStatuses) {
+      if (!s.user) continue;
+      const owner = s.user; // populated user model instance
+      let allowed = false;
+
+      if (owner.statusPrivacyType === "contacts") {
+        allowed = true;
+      } else if (owner.statusPrivacyType === "except") {
+        allowed = !owner.statusExcludedUsers.some((id) => id.toString() === userId.toString());
+      } else if (owner.statusPrivacyType === "only") {
+        allowed = owner.statusAllowedUsers.some((id) => id.toString() === userId.toString());
+      }
+
+      if (allowed) {
+        visibleStatuses.push(s);
+      }
+    }
+
+    // Group by userId code block
     const grouped = {};
-    statuses.forEach((s) => {
+    visibleStatuses.forEach((s) => {
       const uid = s.user._id.toString();
       if (!grouped[uid]) {
         grouped[uid] = {
-          user: s.user,
+          user: {
+            _id: s.user._id,
+            fullName: s.user.fullName,
+            profilePic: s.user.profilePic,
+          },
           statuses: [],
           latestTime: s.createdAt,
           hasUnseen: false,
@@ -155,7 +261,7 @@ export const viewStatus = async (req, res) => {
     }
 
     await status.populate("viewedBy.user", "fullName profilePic");
-    await status.populate("likes", "fullName profilePic"); // Sync likes info
+    await status.populate("likes", "fullName profilePic"); 
     res.status(200).json(status);
   } catch (error) {
     console.error("Error viewing status:", error);
@@ -163,7 +269,7 @@ export const viewStatus = async (req, res) => {
   }
 };
 
-// ── NAYA: Toggle Like Status ──────────────────────────────────────────────────
+// ── Toggle Like Status ──────────────────────────────────────────────────
 export const toggleLikeStatus = async (req, res) => {
   try {
     const { statusId } = req.params;
@@ -185,7 +291,6 @@ export const toggleLikeStatus = async (req, res) => {
     await status.save();
     await status.populate("likes", "fullName profilePic");
 
-    // Socket to notify status owner and viewers instantly
     io.emit("status:liked", {
       statusId,
       likes: status.likes,
@@ -199,11 +304,11 @@ export const toggleLikeStatus = async (req, res) => {
   }
 };
 
-// ── NAYA: Reply to Status (WhatsApp Style Chat injection) ────────────────────
+// ── Reply to Status ───────────────────────────────────────────────────────────
 export const replyStatus = async (req, res) => {
   try {
     const { statusId } = req.params;
-    const { text } = req.body; // Custom message text sent from bottom sheet input
+    const { text } = req.body; 
     const senderId = req.user._id;
 
     if (!text || text.trim() === "") {
@@ -214,20 +319,15 @@ export const replyStatus = async (req, res) => {
     if (!status) return res.status(404).json({ message: "Status not found" });
 
     const receiverId = status.user._id;
-
-    // Construct reply dynamic contextual bubble message formatting for existing core chat scheme
     const formattedText = `💬 Replied to status:\n"${text}"`;
 
-    // Normal message collection instance creation mechanism
     const newMessage = await Message.create({
       senderId,
       receiverId,
       text: formattedText,
-      // Optional fields: Agar message model image attachments link arrays support karta ho
       image: status.mediaType === "image" ? status.mediaUrl : null, 
     });
 
-    // Notify user directly inside specific room channel execution
     const receiverSocketId = getReceiverSocketId(receiverId.toString());
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("newMessage", newMessage);
@@ -265,7 +365,6 @@ export const deleteStatus = async (req, res) => {
     }
 
     await Status.findByIdAndDelete(statusId);
-
     io.emit("status:deleted", { statusId });
 
     res.status(200).json({ message: "Status deleted" });
