@@ -195,6 +195,7 @@ export const editMessage = async (req, res) => {
 export const markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
+    const readReceiptsEnabled = req.query.receipts !== "false";
 
     await Message.updateMany(
       {
@@ -205,6 +206,22 @@ export const markAsRead = async (req, res) => {
       { isRead: true }
     );
 
+    // Sirf tab sender ko seen batao jab read receipts ON ho
+    if (readReceiptsEnabled) {
+      const senderSocketId = getReceiverSocketId(id);
+      if (senderSocketId) {
+        io.to(senderSocketId).emit("messagesRead", {
+          readBy: req.user._id,
+        });
+      }
+    }
+
+    res.status(200).json({ message: "Messages marked as read" });
+  } catch (error) {
+    console.log("Error in markAsRead controller", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
     const senderSocketId = getReceiverSocketId(id);
     if (senderSocketId) {
       io.to(senderSocketId).emit("messagesRead", {
