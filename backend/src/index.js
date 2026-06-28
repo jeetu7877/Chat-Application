@@ -9,12 +9,12 @@ import morgan from "morgan";
 import { app, server } from "./lib/socket.js";
 import path from "path";
 import gameRoutes from "./routes/game.route.js";
-import mediaRoutes from "./routes/media.routes.js"; // ✅ यहाँ .route.js को बदलकर .routes.js कर दिया है
+import mediaRoutes from "./routes/media.routes.js";
+import statusRoutes from "./routes/status.route.js"; // ✅ Status routes
 
 dotenv.config();
 const PORT = process.env.PORT;
 const __dirname = path.resolve();
-
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 app.use(morgan("dev"));
@@ -39,6 +39,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/game", gameRoutes);
 app.use("/api/media", mediaRoutes);
+app.use("/api/status", statusRoutes); // ✅ Status routes register
 
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../frontend/dist")));
@@ -46,9 +47,7 @@ if (process.env.NODE_ENV === "production") {
     res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
   });
 }
-
 app.options("*", cors());
-
 server.listen(PORT, () => {
   console.log("Server is running on Port: " + PORT);
   connectDB();
