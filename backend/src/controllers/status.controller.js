@@ -31,10 +31,6 @@ export const uploadStatus = async (req, res) => {
     await status.populate("user", "fullName profilePic");
 
     // ✅ Socket.io — friends ko instantly notify karo
-    // User ke saare friends dhundho
-    const currentUser = await User.findById(userId);
-    // Friends = jo log is user se connected hain (messages/users list)
-    // Simple approach: sabko broadcast karo (unread status update)
     io.emit("status:new", {
       status: {
         _id: status._id,
@@ -66,7 +62,7 @@ export const getMyStatuses = async (req, res) => {
       expireAt: { $gt: now },
     })
       .populate("user", "fullName profilePic")
-      .populate("viewedBy.user", "fullName profilePic")
+      .populate("viewedBy.user", "fullName profilePic") // ✅ Sahi h
       .sort({ createdAt: -1 });
 
     res.status(200).json(statuses);
@@ -83,7 +79,6 @@ export const getFriendsStatuses = async (req, res) => {
     const now = new Date();
 
     // Saare users ke statuses fetch karo (except self)
-    // Group by user — latest first
     const statuses = await Status.find({
       user: { $ne: userId },
       expireAt: { $gt: now },
@@ -112,7 +107,6 @@ export const getFriendsStatuses = async (req, res) => {
       if (!seen) grouped[uid].hasUnseen = true;
     });
 
-    // Array mein convert karo, newest first
     const result = Object.values(grouped).sort(
       (a, b) => new Date(b.latestTime) - new Date(a.latestTime)
     );
@@ -125,7 +119,6 @@ export const getFriendsStatuses = async (req, res) => {
 };
 
 // ── Mark Status as Viewed ─────────────────────────────────────────────────────
-// ── Mark Status as Viewed ─────────────────────────────────────────────────────
 export const viewStatus = async (req, res) => {
   try {
     const { statusId } = req.params;
@@ -134,7 +127,7 @@ export const viewStatus = async (req, res) => {
     const status = await Status.findById(statusId);
     if (!status) return res.status(404).json({ message: "Status not found" });
 
-    // ← Apna khud ka status view mat karo
+    // Apna khud ka status view check
     if (status.user.toString() === userId.toString()) {
       return res.status(200).json({ message: "Own status" });
     }
@@ -147,21 +140,34 @@ export const viewStatus = async (req, res) => {
       status.viewedBy.push({ user: userId, viewedAt: new Date() });
       await status.save();
 
+      // ✅ FIX: Emit karne se pehle save hue user data ko complete populate karo
+      // Taaki live socket par bhi details instantly update ho sakein
+      await status.populate("viewedBy.user", "fullName profilePic");
+
+      // Naya added viewer object extract karo socket ke liye
+      const newViewerData = status.viewedBy.find(
+        (v) => v.user?._id.toString() === userId.toString()
+      );
+
       const ownerSocketId = getReceiverSocketId(status.user.toString());
       if (ownerSocketId) {
         io.to(ownerSocketId).emit("status:viewed", {
           statusId,
-          viewedBy: userId,
+          // ✅ Sirf ID bhejne ke bajay structured data bhej rahe hain
+          viewer: newViewerData, 
         });
       }
     }
 
-    res.status(200).json({ message: "Status viewed" });
+    // Response me updated status data bhejo frontend store sync ke liye
+    await status.populate("viewedBy.user", "fullName profilePic");
+    res.status(200).json(status);
   } catch (error) {
     console.error("Error viewing status:", error);
     res.status(500).json({ message: "Failed to mark status as viewed" });
   }
 };
+
 // ── Delete Status ─────────────────────────────────────────────────────────────
 export const deleteStatus = async (req, res) => {
   try {
@@ -171,12 +177,10 @@ export const deleteStatus = async (req, res) => {
     const status = await Status.findById(statusId);
     if (!status) return res.status(404).json({ message: "Status not found" });
 
-    // Sirf apna status delete kar sakte ho
     if (status.user.toString() !== userId.toString()) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // Cloudinary se bhi delete karo
     try {
       const urlParts = status.mediaUrl.split("/");
       const publicIdWithExt = urlParts.slice(-2).join("/");
@@ -190,7 +194,6 @@ export const deleteStatus = async (req, res) => {
 
     await Status.findByIdAndDelete(statusId);
 
-    // Socket — friends ko batao status delete hua
     io.emit("status:deleted", { statusId });
 
     res.status(200).json({ message: "Status deleted" });
