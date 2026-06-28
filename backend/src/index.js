@@ -13,6 +13,7 @@ import gameRoutes from "./routes/game.route.js";
 dotenv.config();
 const PORT = process.env.PORT;
 const __dirname = path.resolve();
+
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 app.use(morgan("dev"));
@@ -22,23 +23,28 @@ app.use(
       "https://starlit-moxie-782d49.netlify.app",
       "capacitor://localhost",
       "http://localhost",
-      "https://localhost"          // ✅ ye add karo
+      "https://localhost",
     ],
     credentials: true,
   })
 );
 
+// ✅ Keep-alive ping endpoint — Render.com sleep prevent karo
+app.get("/ping", (req, res) => {
+  res.status(200).json({ status: "ok", time: new Date().toISOString() });
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/game", gameRoutes);
 
-if(process.env.NODE_ENV === "production"){
+if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../frontend/dist")));
   app.get("*", (req, res) => {
     res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
-    
-  })
+  });
 }
+
 app.options("*", cors());
 
 server.listen(PORT, () => {
