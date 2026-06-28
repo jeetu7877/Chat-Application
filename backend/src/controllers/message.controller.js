@@ -2,15 +2,19 @@ import Message from "../models/message.model.js";
 import User from "../models/user.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
+import bcrypt from "bcryptjs"; // ✅ NAYA: Password hashing ke liye
 
+// ── ✅ UPDATED: Fetch Users For Sidebar (Hides Locked Chats) ──────────────────
 export const getUsersForSidebar = async (req, res) => {
   try {
     const loggedInUserId = req.user._id;
     const loggedInUser = await User.findById(loggedInUserId);
     const blockedUserIds = loggedInUser.blockedUsers || [];
+    const lockedUserIds = loggedInUser.lockedChats || []; // ✅ NAYA: Locked list nikali
 
+    // Filter kiye users: Na blocked hone chahiye, na locked hone chahiye normal list me
     const filteredUsers = await User.find({
-      _id: { $ne: loggedInUserId, $nin: blockedUserIds },
+      _id: { $ne: loggedInUserId, $nin: [...blockedUserIds, ...lockedUserIds] },
     }).select("-password");
 
     const usersWithLastMessage = await Promise.all(
@@ -53,6 +57,129 @@ export const getUsersForSidebar = async (req, res) => {
   }
 };
 
+// ── ✅ NAYA: Set Chat Lock Password ──────────────────────────────────────────
+export const setLockPassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+    const userId = req.user._id;
+
+    if (!password || password.length < 4) {
+      return res.status(400).json({ error: "Password must be at least 4 characters long" });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    await User.findByIdAndUpdate(userId, {
+      chatLockPassword: hashedPassword,
+      isChatLockSet: true,
+    });
+
+    res.status(200).json({ message: "Chat lock password configured successfully" });
+  } catch (error) {
+    console.error("Error in setLockPassword", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// ── ✅ NAYA: Verify Chat Lock Password ───────────────────────────────────────
+export const verifyLockPassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+    const userId = req.user._id;
+
+    const user = await User.findById(userId);
+    if (!user || !user.chatLockPassword) {
+      return res.status(400).json({ error: "Chat lock password is not configured yet" });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.chatLockPassword);
+    if (!isMatch) {
+      return res.status(400).json({ error: "Incorrect password" });
+    }
+
+    res.status(200).json({ message: "Password verified successfully", verified: true });
+  } catch (error) {
+    console.error("Error in verifyLockPassword", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// ── ✅ NAYA: Toggle Lock Chat (Lock/Unlock) ──────────────────────────────────
+export const toggleLockChat = async (req, res) => {
+  try {
+    const myId = req.user._id;
+    const { id: targetUserId } = req.params;
+
+    const me = await User.findById(myId);
+    const isAlreadyLocked = me.lockedChats?.includes(targetUserId);
+
+    if (isAlreadyLocked) {
+      await User.findByIdAndUpdate(myId, { $pull: { lockedChats: targetUserId } });
+      return res.status(200).json({ message: "Chat unlocked successfully", locked: false });
+    } else {
+      await User.findByIdAndUpdate(myId, { $addToSet: { lockedChats: targetUserId } });
+      return res.status(200).json({ message: "Chat locked and hidden", locked: true });
+    }
+  } catch (error) {
+    console.error("Error in toggleLockChat", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// ── ✅ NAYA: Fetch Locked Users Only ─────────────────────────────────────────
+export const getLockedUsers = async (req, res) => {
+  try {
+    const loggedInUserId = req.user._id;
+    const loggedInUser = await User.findById(loggedInUserId);
+    const lockedUserIds = loggedInUser.lockedChats || [];
+
+    // Sirf unhi logo ki list jo lockedChats array me hain
+    const lockedUsers = await User.find({
+      _id: { $in: lockedUserIds },
+    }).select("-password");
+
+    const usersWithLastMessage = await Promise.all(
+      lockedUsers.map(async (user) => {
+        const lastMessage = await Message.findOne({
+          $or: [
+            { senderId: loggedInUserId, receiverId: user._id },
+            { senderId: user._id, receiverId: loggedInUserId },
+          ],
+          deletedFor: { $ne: loggedInUserId },
+        }).sort({ createdAt: -1 });
+
+        const unreadCount = await Message.countDocuments({
+          senderId: user._id,
+          receiverId: loggedInUserId,
+          isRead: false,
+          deletedFor: { $ne: loggedInUserId },
+        });
+
+        return {
+          ...user.toObject(),
+          lastMessage: lastMessage?.text ||
+            (lastMessage?.image ? "📷 Photo" :
+            lastMessage?.audio ? "🎤 Voice message" :
+            lastMessage?.file ? `📎 ${lastMessage?.fileName || "File"}` : ""),
+          lastMessageTime: lastMessage?.createdAt || null,
+          unreadCount,
+        };
+      })
+    );
+
+    const sorted = usersWithLastMessage.sort(
+      (a, b) => new Date(b.lastMessageTime || 0) - new Date(a.lastMessageTime || 0)
+    );
+
+    res.status(200).json(sorted);
+  } catch (error) {
+    console.error("Error in getLockedUsers", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// ── Get Messages ─────────────────────────────────────────────────────────────
 export const getMessages = async (req, res) => {
   try {
     const { id: userToChatId } = req.params;
@@ -73,6 +200,7 @@ export const getMessages = async (req, res) => {
   }
 };
 
+// ── Send Message ─────────────────────────────────────────────────────────────
 export const sendMessage = async (req, res) => {
   try {
     const { text, image, audio, file, fileName, fileType } = req.body;
@@ -121,6 +249,7 @@ export const sendMessage = async (req, res) => {
   }
 };
 
+// ── Delete Message ────────────────────────────────────────────────────────────
 export const deleteMessage = async (req, res) => {
   try {
     const { id } = req.params;
@@ -141,6 +270,7 @@ export const deleteMessage = async (req, res) => {
   }
 };
 
+// ── Edit Message ──────────────────────────────────────────────────────────────
 export const editMessage = async (req, res) => {
   try {
     const { id } = req.params;
@@ -164,6 +294,7 @@ export const editMessage = async (req, res) => {
   }
 };
 
+// ── Mark As Read ──────────────────────────────────────────────────────────────
 export const markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
@@ -188,6 +319,7 @@ export const markAsRead = async (req, res) => {
   }
 };
 
+// ── Add Reaction ──────────────────────────────────────────────────────────────
 export const addReaction = async (req, res) => {
   try {
     const { id } = req.params;
@@ -223,6 +355,7 @@ export const addReaction = async (req, res) => {
   }
 };
 
+// ── Clear Chat ────────────────────────────────────────────────────────────────
 export const clearChat = async (req, res) => {
   try {
     const myId = req.user._id;
@@ -246,6 +379,7 @@ export const clearChat = async (req, res) => {
   }
 };
 
+// ── Block User ────────────────────────────────────────────────────────────────
 export const blockUser = async (req, res) => {
   try {
     const myId = req.user._id;
