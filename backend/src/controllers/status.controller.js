@@ -125,6 +125,7 @@ export const getFriendsStatuses = async (req, res) => {
 };
 
 // ── Mark Status as Viewed ─────────────────────────────────────────────────────
+// ── Mark Status as Viewed ─────────────────────────────────────────────────────
 export const viewStatus = async (req, res) => {
   try {
     const { statusId } = req.params;
@@ -133,7 +134,11 @@ export const viewStatus = async (req, res) => {
     const status = await Status.findById(statusId);
     if (!status) return res.status(404).json({ message: "Status not found" });
 
-    // Already viewed check
+    // ← Apna khud ka status view mat karo
+    if (status.user.toString() === userId.toString()) {
+      return res.status(200).json({ message: "Own status" });
+    }
+
     const alreadyViewed = status.viewedBy.some(
       (v) => v.user?.toString() === userId.toString()
     );
@@ -142,7 +147,6 @@ export const viewStatus = async (req, res) => {
       status.viewedBy.push({ user: userId, viewedAt: new Date() });
       await status.save();
 
-      // Status owner ko notify karo
       const ownerSocketId = getReceiverSocketId(status.user.toString());
       if (ownerSocketId) {
         io.to(ownerSocketId).emit("status:viewed", {
@@ -158,7 +162,6 @@ export const viewStatus = async (req, res) => {
     res.status(500).json({ message: "Failed to mark status as viewed" });
   }
 };
-
 // ── Delete Status ─────────────────────────────────────────────────────────────
 export const deleteStatus = async (req, res) => {
   try {
