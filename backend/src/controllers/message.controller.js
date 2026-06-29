@@ -224,7 +224,6 @@ export const getMessages = async (req, res) => {
   }
 };
 
-// ── SEND MESSAGE ──────────────────────────────────────────
 export const sendMessage = async (req, res) => {
   try {
     const { text, image, audio, file, fileName, fileType, documentFile, locationUrl, fileSize, mimeType } = req.body;
@@ -238,13 +237,11 @@ export const sendMessage = async (req, res) => {
 
     let imageUrl, audioUrl, docUrl;
 
-    // 1. Handle Images (Gallery / Camera)
     if (image) {
       const uploadResponse = await cloudinary.uploader.upload(image);
       imageUrl = uploadResponse.secure_url;
     }
 
-    // 2. Handle Audio Messages
     if (audio) {
       const uploadResponse = await cloudinary.uploader.upload(audio, {
         resource_type: "video", folder: "audio_messages",
@@ -252,14 +249,20 @@ export const sendMessage = async (req, res) => {
       audioUrl = uploadResponse.secure_url;
     }
 
-    // 3. ✅ FIX: Documents (PDF/Docx/sab kuch) hamesha "raw" resource type se upload hoga
+    // ✅ FIX: Extension preserve karte hue document upload karo
     const targetDoc = documentFile || file;
     const currentMime = fileType || mimeType || "";
 
     if (targetDoc) {
+      let ext = "pdf";
+      if (fileName && fileName.includes(".")) {
+        ext = fileName.split(".").pop().toLowerCase();
+      }
+
       const uploadResponse = await cloudinary.uploader.upload(targetDoc, {
         resource_type: "raw",
         folder: "document_messages",
+        format: ext,
       });
       docUrl = uploadResponse.secure_url;
     }
