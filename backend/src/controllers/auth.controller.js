@@ -1,8 +1,165 @@
 import { generateToken } from "../lib/utils.js";
 import User from "../models/user.model.js";
+import OTP from "../models/otp.model.js";
 import bcrypt from "bcryptjs";
 import cloudinary from "../lib/cloudinary.js";
+import crypto from "crypto";
+import { sendOTPEmail } from "../lib/email.js";
 
+// ── Generate 6-digit OTP ──────────────────────────────────────────────────────
+const generateOTP = () => crypto.randomInt(100000, 999999).toString();
+
+// ── Send OTP ──────────────────────────────────────────────────────────────────
+export const sendOTP = async (req, res) => {
+  try {
+    const { fullName, email, password } = req.body;
+
+    if (!fullName || !email || !password)
+      return res.status(400).json({ message: "All fields are required" });
+
+    if (!/\S+@\S+\.\S+/.test(email))
+      return res.status(400).json({ message: "Invalid email format" });
+
+    if (password.length < 6)
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
+
+    // Email already registered check
+    const existingUser = await User.findOne({ email });
+    if (existingUser)
+      return res.status(400).json({ message: "This email is already registered" });
+
+    // Rate limit — max 3 OTPs per hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentOTPs = await OTP.countDocuments({ email, createdAt: { $gt: oneHourAgo } });
+    if (recentOTPs >= 3)
+      return res.status(429).json({ message: "Too many OTP requests. Try again after 1 hour." });
+
+    // Delete old OTPs for this email
+    await OTP.deleteMany({ email });
+
+    // Generate OTP
+    const otp = generateOTP();
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Save OTP
+    await OTP.create({
+      email,
+      otp,
+      fullName,
+      password: hashedPassword,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
+    });
+
+    // Send email
+    try {
+      await sendOTPEmail(email, fullName, otp);
+    } catch (emailError) {
+      console.error("Email send error:", emailError);
+      await OTP.deleteMany({ email });
+      return res.status(500).json({ message: "Unable to send verification email. Please try again." });
+    }
+
+    res.status(200).json({ message: "OTP sent successfully", email });
+  } catch (error) {
+    console.log("Error in sendOTP:", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ── Verify OTP & Create Account ───────────────────────────────────────────────
+export const verifyOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp)
+      return res.status(400).json({ message: "Email and OTP are required" });
+
+    const otpRecord = await OTP.findOne({ email });
+    if (!otpRecord)
+      return res.status(400).json({ message: "OTP not found. Please request a new one." });
+
+    // Max attempts check
+    if (otpRecord.attempts >= 5) {
+      await OTP.deleteMany({ email });
+      return res.status(400).json({ message: "Too many failed attempts. Please request a new OTP." });
+    }
+
+    // Expiry check
+    if (new Date() > otpRecord.expiresAt) {
+      await OTP.deleteMany({ email });
+      return res.status(400).json({ message: "Verification code has expired. Please request a new one." });
+    }
+
+    // OTP match check
+    if (otpRecord.otp !== otp.toString()) {
+      await OTP.findByIdAndUpdate(otpRecord._id, { $inc: { attempts: 1 } });
+      const remaining = 5 - (otpRecord.attempts + 1);
+      return res.status(400).json({ message: `Invalid verification code. ${remaining} attempts remaining.` });
+    }
+
+    // ✅ OTP verified — create user
+    const existingUser = await User.findOne({ email });
+    if (existingUser)
+      return res.status(400).json({ message: "Email already registered" });
+
+    const newUser = new User({
+      fullName: otpRecord.fullName,
+      email,
+      password: otpRecord.password,
+      emailVerified: true,
+    });
+
+    await newUser.save();
+    await OTP.deleteMany({ email });
+
+    const token = generateToken(newUser._id, res);
+
+    res.status(201).json({
+      _id: newUser._id,
+      fullName: newUser.fullName,
+      email: newUser.email,
+      profilePic: newUser.profilePic,
+      token,
+    });
+  } catch (error) {
+    console.log("Error in verifyOTP:", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ── Resend OTP ────────────────────────────────────────────────────────────────
+export const resendOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const otpRecord = await OTP.findOne({ email });
+    if (!otpRecord)
+      return res.status(400).json({ message: "No pending verification for this email" });
+
+    // Rate limit
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentOTPs = await OTP.countDocuments({ email, createdAt: { $gt: oneHourAgo } });
+    if (recentOTPs >= 3)
+      return res.status(429).json({ message: "Too many OTP requests. Try again after 1 hour." });
+
+    const otp = generateOTP();
+    await OTP.findByIdAndUpdate(otpRecord._id, {
+      otp,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      attempts: 0,
+    });
+
+    await sendOTPEmail(email, otpRecord.fullName, otp);
+
+    res.status(200).json({ message: "OTP resent successfully" });
+  } catch (error) {
+    console.log("Error in resendOTP:", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ── Signup (Direct — existing) ────────────────────────────────────────────────
 export const signup = async (req, res) => {
   const { fullName, email, password } = req.body;
   try {
@@ -31,13 +188,16 @@ export const signup = async (req, res) => {
   }
 };
 
+// ── Login ─────────────────────────────────────────────────────────────────────
 export const login = async (req, res) => {
   const { email, password } = req.body;
   try {
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: "Invalid credentials" });
+
     const isPasswordCorrect = await bcrypt.compare(password, user.password);
     if (!isPasswordCorrect) return res.status(400).json({ message: "Invalid credentials" });
+
     const token = generateToken(user._id, res);
     res.status(200).json({
       _id: user._id, fullName: user.fullName,
@@ -49,6 +209,7 @@ export const login = async (req, res) => {
   }
 };
 
+// ── Logout ────────────────────────────────────────────────────────────────────
 export const logout = (req, res) => {
   try {
     res.cookie("jwt", "", { maxAge: 0 });
@@ -59,14 +220,12 @@ export const logout = (req, res) => {
   }
 };
 
-// ✅ UPDATED — ab profilePic, fullName, email, about, hideOnlineStatus sab handle karta hai
+// ── Update Profile ────────────────────────────────────────────────────────────
 export const updateProfile = async (req, res) => {
   try {
     const { profilePic, fullName, email, about, hideOnlineStatus } = req.body;
     const userId = req.user._id;
-
     const updateFields = {};
-
     if (profilePic) {
       const uploadResponse = await cloudinary.uploader.upload(profilePic);
       updateFields.profilePic = uploadResponse.secure_url;
@@ -75,11 +234,7 @@ export const updateProfile = async (req, res) => {
     if (email !== undefined) updateFields.email = email;
     if (about !== undefined) updateFields.about = about;
     if (hideOnlineStatus !== undefined) updateFields.hideOnlineStatus = hideOnlineStatus;
-
-    const updatedUser = await User.findByIdAndUpdate(
-      userId, updateFields, { new: true }
-    ).select("-password");
-
+    const updatedUser = await User.findByIdAndUpdate(userId, updateFields, { new: true }).select("-password");
     res.status(200).json(updatedUser);
   } catch (error) {
     console.log("error in update profile:", error.message);
@@ -87,6 +242,7 @@ export const updateProfile = async (req, res) => {
   }
 };
 
+// ── Check Auth ────────────────────────────────────────────────────────────────
 export const checkAuth = (req, res) => {
   try {
     res.status(200).json(req.user);
@@ -96,22 +252,16 @@ export const checkAuth = (req, res) => {
   }
 };
 
-// ── Get All Users (for Contacts) — blocked users dono taraf se filter ─────────
+// ── Get All Users ─────────────────────────────────────────────────────────────
 export const getAllUsers = async (req, res) => {
   try {
     const myId = req.user._id;
     const me = await User.findById(myId).select("blockedUsers");
     const blockedByMe = me.blockedUsers || [];
-
     const usersWhoBlockedMe = await User.find({ blockedUsers: myId }).select("_id");
     const blockedMeIds = usersWhoBlockedMe.map(u => u._id);
-
     const allBlocked = [...blockedByMe, ...blockedMeIds];
-
-    const users = await User.find({
-      _id: { $ne: myId, $nin: allBlocked },
-    }).select("-password");
-
+    const users = await User.find({ _id: { $ne: myId, $nin: allBlocked } }).select("-password");
     res.status(200).json(users);
   } catch (error) {
     console.log("Error in getAllUsers controller", error.message);
@@ -119,7 +269,7 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
-// ── Block User ─────────────────────────────────────────────────────────────────
+// ── Block User ────────────────────────────────────────────────────────────────
 export const blockUser = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -137,7 +287,7 @@ export const blockUser = async (req, res) => {
   }
 };
 
-// ── Unblock User ───────────────────────────────────────────────────────────────
+// ── Unblock User ──────────────────────────────────────────────────────────────
 export const unblockUser = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -150,7 +300,7 @@ export const unblockUser = async (req, res) => {
   }
 };
 
-// ── Get Blocked Users ──────────────────────────────────────────────────────────
+// ── Get Blocked Users ─────────────────────────────────────────────────────────
 export const getBlockedUsers = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
