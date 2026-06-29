@@ -224,8 +224,7 @@ export const getMessages = async (req, res) => {
   }
 };
 
-// ── SEND MESSAGE (Ultimate Cloudinary PDF View Fix) ──────────────
-// ── SEND MESSAGE (Final Core Binary Content-Type Stream Fix) ──────────────
+// ── SEND MESSAGE ──────────────────────────────────────────
 export const sendMessage = async (req, res) => {
   try {
     const { text, image, audio, file, fileName, fileType, documentFile, locationUrl, fileSize, mimeType } = req.body;
@@ -237,7 +236,7 @@ export const sendMessage = async (req, res) => {
       return res.status(403).json({ error: "You cannot message this user" });
     }
 
-    let imageUrl, audioUrl, fileUrl, docUrl;
+    let imageUrl, audioUrl, docUrl;
 
     // 1. Handle Images (Gallery / Camera)
     if (image) {
@@ -253,14 +252,14 @@ export const sendMessage = async (req, res) => {
       audioUrl = uploadResponse.secure_url;
     }
 
-    // 3. ✅ ULTIMATE FIX: Base64 Documents direct automatic conversion wrapper
+    // 3. ✅ FIX: Documents (PDF/Docx/sab kuch) hamesha "raw" resource type se upload hoga
     const targetDoc = documentFile || file;
+    const currentMime = fileType || mimeType || "";
+
     if (targetDoc) {
-      // Base64 document formats mapping securely
       const uploadResponse = await cloudinary.uploader.upload(targetDoc, {
-        resource_type: "auto", 
+        resource_type: "raw",
         folder: "document_messages",
-        flags: "attachment" // 🎯 Is flag se Cloudinary raw headers bypass karta h aur ERR_INVALID_RESPONSE hat jata h
       });
       docUrl = uploadResponse.secure_url;
     }
@@ -271,11 +270,11 @@ export const sendMessage = async (req, res) => {
       text,
       image: imageUrl,
       audio: audioUrl,
-      documentFile: docUrl || fileUrl,
+      documentFile: docUrl,
       locationUrl: locationUrl || null,
-      file: docUrl || fileUrl,
+      file: docUrl,
       fileName: fileName || "Document.pdf",
-      fileType: fileType || mimeType || "application/pdf",
+      fileType: currentMime || "application/pdf",
       fileSize: fileSize || "Attachment",
     });
 
