@@ -225,6 +225,7 @@ export const getMessages = async (req, res) => {
 };
 
 // ── SEND MESSAGE (Ultimate Cloudinary PDF View Fix) ──────────────
+// ── SEND MESSAGE (Final Core Binary Content-Type Stream Fix) ──────────────
 export const sendMessage = async (req, res) => {
   try {
     const { text, image, audio, file, fileName, fileType, documentFile, locationUrl, fileSize, mimeType } = req.body;
@@ -252,17 +253,14 @@ export const sendMessage = async (req, res) => {
       audioUrl = uploadResponse.secure_url;
     }
 
-    // 3. ✅ FIX: Pure PDF/Docx Verification upload stream logic
+    // 3. ✅ ULTIMATE FIX: Base64 Documents direct automatic conversion wrapper
     const targetDoc = documentFile || file;
-    const currentMime = fileType || mimeType || "";
-
     if (targetDoc) {
-      // 🎯 CRITICAL CHECK: Agar PDF hai toh "image" resource type, baaki docs ke liye "raw"
-      const isPDF = currentMime.toLowerCase().includes("pdf") || (fileName && fileName.toLowerCase().endsWith(".pdf"));
-      
+      // Base64 document formats mapping securely
       const uploadResponse = await cloudinary.uploader.upload(targetDoc, {
-        resource_type: isPDF ? "image" : "raw", 
+        resource_type: "auto", 
         folder: "document_messages",
+        flags: "attachment" // 🎯 Is flag se Cloudinary raw headers bypass karta h aur ERR_INVALID_RESPONSE hat jata h
       });
       docUrl = uploadResponse.secure_url;
     }
@@ -277,7 +275,7 @@ export const sendMessage = async (req, res) => {
       locationUrl: locationUrl || null,
       file: docUrl || fileUrl,
       fileName: fileName || "Document.pdf",
-      fileType: currentMime || "application/pdf",
+      fileType: fileType || mimeType || "application/pdf",
       fileSize: fileSize || "Attachment",
     });
 
