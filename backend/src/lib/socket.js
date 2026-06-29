@@ -5,7 +5,10 @@ import User from "../models/user.model.js";
 
 const app = express();
 const server = http.createServer(app);
+// ── SOCKET SERVER CONFIGURATION WITH TIMEOUT OPTIMIZATION ──
 const io = new Server(server, {
+    pingTimeout: 60000,  // ⏱️ 60 seconds tak wait karega agar response na aaye (Ghost drop block)
+    pingInterval: 25000, // ⏱️ Har 25 seconds me server heartbeat check bhejega
     cors: {
         origin: [
           "http://localhost:5173",
