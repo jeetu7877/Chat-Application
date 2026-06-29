@@ -452,3 +452,49 @@ export const blockUser = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
+
+// ── ✅ NEW SEPARATE FUNCTION: Only for Game Invite Modal (No Crashing) ──
+export const getAllUsersForInvite = async (req, res) => {
+  try {
+    const loggedInUserId = req.user._id;
+    const loggedInUser = await User.findById(loggedInUserId);
+    const blockedUserIds = loggedInUser?.blockedUsers || [];
+
+    // 🎯 Database se saare users laao (Sirf tumhein aur blocked users ko chhodkar, lock/unlock sab aayenge)
+    const allUsers = await User.find({
+      _id: { $ne: loggedInUserId, $nin: blockedUserIds },
+    }).select("-password");
+
+    const completeUsersList = await Promise.all(
+      allUsers.map(async (user) => {
+        const lastMessage = await Message.findOne({
+          $or: [
+            { senderId: loggedInUserId, receiverId: user._id },
+            { senderId: user._id, receiverId: loggedInUserId },
+          ],
+          deletedFor: { $ne: loggedInUserId },
+        }).sort({ createdAt: -1 });
+
+        let lastMsgText = "";
+        if (lastMessage) {
+          if (lastMessage.sharedContactId) lastMsgText = "👤 Contact";
+          else if (lastMessage.text) lastMsgText = lastMessage.text;
+          else if (lastMessage.image) lastMsgText = "📷 Photo";
+        }
+
+        return {
+          ...user.toObject(),
+          lastMessage: lastMsgText,
+          lastMessageTime: lastMessage?.createdAt || null, // ✅ non-chat walo ke liye null rahega par data filter nahi hoga
+          unreadCount: 0,
+        };
+      })
+    );
+
+    res.status(200).json(completeUsersList);
+  } catch (error) {
+    console.error("Error in getAllUsersForInvite:", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
