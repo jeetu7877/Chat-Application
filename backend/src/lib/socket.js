@@ -419,13 +419,21 @@ io.on("connection", async (socket) => {
         if (sid) io.to(sid).emit("call-ended");
     });
 
-    // ── Disconnect (Added Asynchronous Database Sync Listener) ────────────────
+    // ── Disconnect (Added Asynchronous Database Sync + Live Emit Broadcast) ──
     socket.on("disconnect", async () => {
         console.log("❌ User disconnected:", userId);
         if (userId && userId !== "undefined") {
-            // 🎯 REALTIME DATABASE LOG: Offline jaate hi timestamp save karo
+            const currentOfflineTime = new Date();
+            
             try {
-                await User.findByIdAndUpdate(userId, { lastActive: new Date() });
+                // 1. Database me strictly User ka app close exact current time update kiya
+                await User.findByIdAndUpdate(userId, { lastActive: currentOfflineTime });
+
+                // 2. 🎯 REALTIME SYNC BROADCAST: Baaki doston ko realtime signal bhein taaki header text badal jaye!
+                socket.broadcast.emit("userOfflineUpdate", {
+                    userId: userId,
+                    lastActive: currentOfflineTime
+                });
             } catch (err) {
                 console.log("Error updating lastActive dynamic presence timestamp:", err.message);
             }
