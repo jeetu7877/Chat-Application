@@ -1,25 +1,25 @@
 import express from "express";
 import {
-  checkAuth,
-  login,
-  logout,
-  signup,
-  updateProfile,
-  blockUser,
-  unblockUser,
-  getBlockedUsers,
-  getAllUsers,
+  checkAuth, login, logout, signup, updateProfile,
+  blockUser, unblockUser, getBlockedUsers, getAllUsers,
+  sendOTP, verifyOTP, resendOTP,
 } from "../controllers/auth.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
+// OTP routes
+router.post("/send-otp", sendOTP);
+router.post("/verify-otp", verifyOTP);
+router.post("/resend-otp", resendOTP);
+
+// Auth routes
 router.post("/signup", signup);
 router.post("/login", login);
 router.post("/logout", logout);
 router.put("/update-profile", protectRoute, updateProfile);
 router.get("/check", protectRoute, checkAuth);
-router.get("/users", protectRoute, getAllUsers); // ← Add
+router.get("/users", protectRoute, getAllUsers);
 
 // Block / Unblock
 router.post("/block/:id", protectRoute, blockUser);
