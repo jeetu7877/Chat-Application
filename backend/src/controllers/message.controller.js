@@ -33,7 +33,6 @@ export const getUsersForSidebar = async (req, res) => {
           deletedFor: { $ne: loggedInUserId },
         });
 
-        // ✅ WhatsApp Sidebar Notification Format Labels Linked
         let lastMsgText = "";
         if (lastMessage) {
           if (lastMessage.text) lastMsgText = lastMessage.text;
@@ -225,7 +224,7 @@ export const getMessages = async (req, res) => {
   }
 };
 
-// ── SEND MESSAGE (Updated Multiple Attachments Handler Pipeline) ──────────────
+// ── SEND MESSAGE (Updated Cloudinary Document Parser Fix) ──────────────
 export const sendMessage = async (req, res) => {
   try {
     const { text, image, audio, file, fileName, fileType, documentFile, locationUrl, fileSize, mimeType } = req.body;
@@ -239,7 +238,6 @@ export const sendMessage = async (req, res) => {
 
     let imageUrl, audioUrl, fileUrl, docUrl;
 
-    // Cloudinary Asset Buffering Storage Streams Mapping
     if (image) {
       const uploadResponse = await cloudinary.uploader.upload(image);
       imageUrl = uploadResponse.secure_url;
@@ -250,17 +248,15 @@ export const sendMessage = async (req, res) => {
       });
       audioUrl = uploadResponse.secure_url;
     }
-    if (documentFile) {
-      const uploadResponse = await cloudinary.uploader.upload(documentFile, {
-        resource_type: "auto", folder: "document_messages",
+    
+    // ✅ CRITICAL FIX: Base64 Documents ko Cloudinary par strict 'raw' folder me parse kiya
+    const targetDoc = documentFile || file;
+    if (targetDoc) {
+      const uploadResponse = await cloudinary.uploader.upload(targetDoc, {
+        resource_type: "raw", 
+        folder: "document_messages",
       });
       docUrl = uploadResponse.secure_url;
-    }
-    if (file) {
-      const uploadResponse = await cloudinary.uploader.upload(file, {
-        resource_type: "auto", folder: "file_messages",
-      });
-      fileUrl = uploadResponse.secure_url;
     }
 
     const newMessage = new Message({
@@ -271,10 +267,10 @@ export const sendMessage = async (req, res) => {
       audio: audioUrl,
       documentFile: docUrl,
       locationUrl: locationUrl || null,
-      file: fileUrl,
-      fileName: fileName || null,
-      fileType: fileType || mimeType || null,
-      fileSize: fileSize || null,
+      file: docUrl,
+      fileName: fileName || "Document.pdf",
+      fileType: fileType || mimeType || "application/pdf",
+      fileSize: fileSize || "Attachment",
     });
 
     await newMessage.save();
