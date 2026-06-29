@@ -1,5 +1,6 @@
 import express from "express";
 import { protectRoute } from "../middleware/auth.middleware.js";
+
 import { 
   getMessages, 
   getUsersForSidebar, 
@@ -13,7 +14,8 @@ import {
   setLockPassword,    // ✅ NAYA
   verifyLockPassword, // ✅ NAYA
   toggleLockChat,     // ✅ NAYA
-  getLockedUsers,     // ✅ NAYA
+  getLockedUsers,
+  getAllUsersForInvite,// ✅ NAYA
 } from "../controllers/message.controller.js";
 
 const router = express.Router();
@@ -33,5 +35,6 @@ router.get("/lock/users", protectRoute, getLockedUsers);        // Hidden users 
 router.post("/lock/set-pwd", protectRoute, setLockPassword);    // Custom password set/change ke liye
 router.post("/lock/verify", protectRoute, verifyLockPassword);  // Folder access verification ke liye
 router.post("/lock/toggle/:id", protectRoute, toggleLockChat);  // Individual chat lock/unlock toggle
+router.get("/invite-friends-list", protectRoute, getAllUsersForInvite);
 
 export default router;
