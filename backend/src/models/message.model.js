@@ -37,6 +37,10 @@ const messageSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+    sharedContactId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "User"
+},
   },
   { timestamps: true }
 );
