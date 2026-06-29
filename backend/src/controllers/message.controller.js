@@ -33,9 +33,11 @@ export const getUsersForSidebar = async (req, res) => {
           deletedFor: { $ne: loggedInUserId },
         });
 
+        // ✅ WhatsApp Sidebar Preview Formats
         let lastMsgText = "";
         if (lastMessage) {
-          if (lastMessage.text) lastMsgText = lastMessage.text;
+          if (lastMessage.sharedContactId) lastMsgText = "👤 Contact";
+          else if (lastMessage.text) lastMsgText = lastMessage.text;
           else if (lastMessage.image) lastMsgText = "📷 Photo";
           else if (lastMessage.audio) lastMsgText = "🎵 Audio Note";
           else if (lastMessage.documentFile) lastMsgText = `📄 ${lastMessage.fileName || "Document"}`;
@@ -175,7 +177,8 @@ export const getLockedUsers = async (req, res) => {
 
         let lastMsgText = "";
         if (lastMessage) {
-          if (lastMessage.text) lastMsgText = lastMessage.text;
+          if (lastMessage.sharedContactId) lastMsgText = "👤 Contact";
+          else if (lastMessage.text) lastMsgText = lastMessage.text;
           else if (lastMessage.image) lastMsgText = "📷 Photo";
           else if (lastMessage.audio) lastMsgText = "🎵 Audio Note";
           else if (lastMessage.documentFile) lastMsgText = `📄 ${lastMessage.fileName || "Document"}`;
@@ -224,9 +227,11 @@ export const getMessages = async (req, res) => {
   }
 };
 
+// ── SEND MESSAGE (Updated Parameter with Contact Share Pipeline) ──────────────
 export const sendMessage = async (req, res) => {
   try {
-    const { text, image, audio, file, fileName, fileType, documentFile, locationUrl, fileSize, mimeType } = req.body;
+    // ✅ destructured sharedContactId from body payload mapping
+    const { text, image, audio, file, fileName, fileType, documentFile, locationUrl, fileSize, mimeType, sharedContactId } = req.body;
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
@@ -249,7 +254,6 @@ export const sendMessage = async (req, res) => {
       audioUrl = uploadResponse.secure_url;
     }
 
-    // ✅ FIX: Extension preserve karte hue document upload karo
     const targetDoc = documentFile || file;
     const currentMime = fileType || mimeType || "";
 
@@ -279,6 +283,7 @@ export const sendMessage = async (req, res) => {
       fileName: fileName || "Document.pdf",
       fileType: currentMime || "application/pdf",
       fileSize: fileSize || "Attachment",
+      sharedContactId: sharedContactId || null, // ✅ Linked correctly here
     });
 
     await newMessage.save();
@@ -292,6 +297,7 @@ export const sendMessage = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
 // ── DELETE MESSAGE ────────────────────────────────────────────────────────────
 export const deleteMessage = async (req, res) => {
   try {
