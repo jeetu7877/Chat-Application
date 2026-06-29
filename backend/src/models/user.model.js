@@ -77,6 +77,10 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: Date.now, // Shuruat me current time rahega, fir disconnect par update hoga
     },
+    emailVerified: {
+  type: Boolean,
+  default: false,
+},
   },
   { timestamps: true }
 );
