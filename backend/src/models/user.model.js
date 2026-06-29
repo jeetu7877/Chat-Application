@@ -56,22 +56,27 @@ const userSchema = new mongoose.Schema(
         default: [],
       },
     ],
-    // ── ✅ NAYA: WhatsApp Chat Lock Engine Fields ──────────────────────
+    // ── WhatsApp Chat Lock Engine Fields ──────────────────────
     chatLockPassword: {
       type: String,
-      default: "", // Hashed string save hogi yahan setting se
+      default: "", 
     },
     isChatLockSet: {
       type: Boolean,
-      default: false, // Jab user pehli baar setup karega tab true hoga
+      default: false, 
     },
     lockedChats: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
-        default: [], // Jin friends ki chats lock hain, unki IDs yahan aayengi
+        default: [], 
       },
     ],
+    // ── ✅ NAYA: Realtime Presence Engine Field ──────────────────────
+    lastActive: {
+      type: Date,
+      default: Date.now, // Shuruat me current time rahega, fir disconnect par update hoga
+    },
   },
   { timestamps: true }
 );
