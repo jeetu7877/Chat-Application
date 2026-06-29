@@ -2,17 +2,16 @@ import Message from "../models/message.model.js";
 import User from "../models/user.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
-import bcrypt from "bcryptjs"; // ✅ NAYA: Password hashing ke liye
+import bcrypt from "bcryptjs";
 
-// ── ✅ UPDATED: Fetch Users For Sidebar (Hides Locked Chats) ──────────────────
+// ── FETCH USERS FOR SIDEBAR (Hides Locked Chats) ──────────────────────────
 export const getUsersForSidebar = async (req, res) => {
   try {
     const loggedInUserId = req.user._id;
     const loggedInUser = await User.findById(loggedInUserId);
     const blockedUserIds = loggedInUser.blockedUsers || [];
-    const lockedUserIds = loggedInUser.lockedChats || []; // ✅ NAYA: Locked list nikali
+    const lockedUserIds = loggedInUser.lockedChats || [];
 
-    // Filter kiye users: Na blocked hone chahiye, na locked hone chahiye normal list me
     const filteredUsers = await User.find({
       _id: { $ne: loggedInUserId, $nin: [...blockedUserIds, ...lockedUserIds] },
     }).select("-password");
@@ -34,12 +33,20 @@ export const getUsersForSidebar = async (req, res) => {
           deletedFor: { $ne: loggedInUserId },
         });
 
+        // ✅ WhatsApp Sidebar Notification Format Labels Linked
+        let lastMsgText = "";
+        if (lastMessage) {
+          if (lastMessage.text) lastMsgText = lastMessage.text;
+          else if (lastMessage.image) lastMsgText = "📷 Photo";
+          else if (lastMessage.audio) lastMsgText = "🎵 Audio Note";
+          else if (lastMessage.documentFile) lastMsgText = `📄 ${lastMessage.fileName || "Document"}`;
+          else if (lastMessage.locationUrl) lastMsgText = "📍 Location Shared";
+          else if (lastMessage.file) lastMsgText = "📎 Attachment";
+        }
+
         return {
           ...user.toObject(),
-          lastMessage: lastMessage?.text ||
-            (lastMessage?.image ? "📷 Photo" :
-            lastMessage?.audio ? "🎤 Voice message" :
-            lastMessage?.file ? `📎 ${lastMessage?.fileName || "File"}` : ""),
+          lastMessage: lastMsgText,
           lastMessageTime: lastMessage?.createdAt || null,
           unreadCount,
         };
@@ -57,8 +64,7 @@ export const getUsersForSidebar = async (req, res) => {
   }
 };
 
-// ── ✅ NAYA: Set Chat Lock Password ──────────────────────────────────────────
-// ── ✅ SECURITY UPGRADE: Set/Update Chat Lock Password with Old Password Verification ──
+// ── SET CHAT LOCK PASSWORD ──────────────────────────────────────────────────
 export const setLockPassword = async (req, res) => {
   try {
     const { password, oldPassword } = req.body;
@@ -71,20 +77,16 @@ export const setLockPassword = async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    // 🔒 VERIFICATION LOGIC: Agar user pehle se password set kar chuka hai (Reset Mode)
     if (user.isChatLockSet && user.chatLockPassword) {
       if (!oldPassword) {
         return res.status(400).json({ error: "Current password is required to change settings" });
       }
-
-      // Backend database se hashed purana password compare karega
       const isMatch = await bcrypt.compare(oldPassword, user.chatLockPassword);
       if (!isMatch) {
         return res.status(400).json({ error: "Incorrect current password. Verification failed." });
       }
     }
 
-    // Agar first-time user hai ya purana password successfully match ho gaya hai, toh naya hash karo
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -98,7 +100,8 @@ export const setLockPassword = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
-// ── ✅ NAYA: Verify Chat Lock Password ───────────────────────────────────────
+
+// ── VERIFY CHAT LOCK PASSWORD ───────────────────────────────────────────────
 export const verifyLockPassword = async (req, res) => {
   try {
     const { password } = req.body;
@@ -121,7 +124,7 @@ export const verifyLockPassword = async (req, res) => {
   }
 };
 
-// ── ✅ NAYA: Toggle Lock Chat (Lock/Unlock) ──────────────────────────────────
+// ── TOGGLE LOCK CHAT (Lock/Unlock) ──────────────────────────────────────────
 export const toggleLockChat = async (req, res) => {
   try {
     const myId = req.user._id;
@@ -143,14 +146,13 @@ export const toggleLockChat = async (req, res) => {
   }
 };
 
-// ── ✅ NAYA: Fetch Locked Users Only ─────────────────────────────────────────
+// ── FETCH LOCKED USERS ONLY ──────────────────────────────────────────────────
 export const getLockedUsers = async (req, res) => {
   try {
     const loggedInUserId = req.user._id;
     const loggedInUser = await User.findById(loggedInUserId);
     const lockedUserIds = loggedInUser.lockedChats || [];
 
-    // Sirf unhi logo ki list jo lockedChats array me hain
     const lockedUsers = await User.find({
       _id: { $in: lockedUserIds },
     }).select("-password");
@@ -172,12 +174,19 @@ export const getLockedUsers = async (req, res) => {
           deletedFor: { $ne: loggedInUserId },
         });
 
+        let lastMsgText = "";
+        if (lastMessage) {
+          if (lastMessage.text) lastMsgText = lastMessage.text;
+          else if (lastMessage.image) lastMsgText = "📷 Photo";
+          else if (lastMessage.audio) lastMsgText = "🎵 Audio Note";
+          else if (lastMessage.documentFile) lastMsgText = `📄 ${lastMessage.fileName || "Document"}`;
+          else if (lastMessage.locationUrl) lastMsgText = "📍 Location Shared";
+          else if (lastMessage.file) lastMsgText = "📎 Attachment";
+        }
+
         return {
           ...user.toObject(),
-          lastMessage: lastMessage?.text ||
-            (lastMessage?.image ? "📷 Photo" :
-            lastMessage?.audio ? "🎤 Voice message" :
-            lastMessage?.file ? `📎 ${lastMessage?.fileName || "File"}` : ""),
+          lastMessage: lastMsgText,
           lastMessageTime: lastMessage?.createdAt || null,
           unreadCount,
         };
@@ -195,7 +204,7 @@ export const getLockedUsers = async (req, res) => {
   }
 };
 
-// ── Get Messages ─────────────────────────────────────────────────────────────
+// ── GET MESSAGES ─────────────────────────────────────────────────────────────
 export const getMessages = async (req, res) => {
   try {
     const { id: userToChatId } = req.params;
@@ -216,10 +225,10 @@ export const getMessages = async (req, res) => {
   }
 };
 
-// ── Send Message ─────────────────────────────────────────────────────────────
+// ── SEND MESSAGE (Updated Multiple Attachments Handler Pipeline) ──────────────
 export const sendMessage = async (req, res) => {
   try {
-    const { text, image, audio, file, fileName, fileType } = req.body;
+    const { text, image, audio, file, fileName, fileType, documentFile, locationUrl, fileSize, mimeType } = req.body;
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
@@ -228,8 +237,9 @@ export const sendMessage = async (req, res) => {
       return res.status(403).json({ error: "You cannot message this user" });
     }
 
-    let imageUrl, audioUrl, fileUrl;
+    let imageUrl, audioUrl, fileUrl, docUrl;
 
+    // Cloudinary Asset Buffering Storage Streams Mapping
     if (image) {
       const uploadResponse = await cloudinary.uploader.upload(image);
       imageUrl = uploadResponse.secure_url;
@@ -240,6 +250,12 @@ export const sendMessage = async (req, res) => {
       });
       audioUrl = uploadResponse.secure_url;
     }
+    if (documentFile) {
+      const uploadResponse = await cloudinary.uploader.upload(documentFile, {
+        resource_type: "auto", folder: "document_messages",
+      });
+      docUrl = uploadResponse.secure_url;
+    }
     if (file) {
       const uploadResponse = await cloudinary.uploader.upload(file, {
         resource_type: "auto", folder: "file_messages",
@@ -248,9 +264,17 @@ export const sendMessage = async (req, res) => {
     }
 
     const newMessage = new Message({
-      senderId, receiverId, text,
-      image: imageUrl, audio: audioUrl,
-      file: fileUrl, fileName: fileName || null, fileType: fileType || null,
+      senderId,
+      receiverId,
+      text,
+      image: imageUrl,
+      audio: audioUrl,
+      documentFile: docUrl,
+      locationUrl: locationUrl || null,
+      file: fileUrl,
+      fileName: fileName || null,
+      fileType: fileType || mimeType || null,
+      fileSize: fileSize || null,
     });
 
     await newMessage.save();
@@ -265,7 +289,7 @@ export const sendMessage = async (req, res) => {
   }
 };
 
-// ── Delete Message ────────────────────────────────────────────────────────────
+// ── DELETE MESSAGE ────────────────────────────────────────────────────────────
 export const deleteMessage = async (req, res) => {
   try {
     const { id } = req.params;
@@ -286,7 +310,7 @@ export const deleteMessage = async (req, res) => {
   }
 };
 
-// ── Edit Message ──────────────────────────────────────────────────────────────
+// ── EDIT MESSAGE ──────────────────────────────────────────────────────────────
 export const editMessage = async (req, res) => {
   try {
     const { id } = req.params;
@@ -310,7 +334,7 @@ export const editMessage = async (req, res) => {
   }
 };
 
-// ── Mark As Read ──────────────────────────────────────────────────────────────
+// ── MARK AS READ ──────────────────────────────────────────────────────────────
 export const markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
@@ -335,7 +359,7 @@ export const markAsRead = async (req, res) => {
   }
 };
 
-// ── Add Reaction ──────────────────────────────────────────────────────────────
+// ── ADD REACTION ──────────────────────────────────────────────────────────────
 export const addReaction = async (req, res) => {
   try {
     const { id } = req.params;
@@ -371,7 +395,7 @@ export const addReaction = async (req, res) => {
   }
 };
 
-// ── Clear Chat ────────────────────────────────────────────────────────────────
+// ── CLEAR CHAT ────────────────────────────────────────────────────────────────
 export const clearChat = async (req, res) => {
   try {
     const myId = req.user._id;
@@ -395,7 +419,7 @@ export const clearChat = async (req, res) => {
   }
 };
 
-// ── Block User ────────────────────────────────────────────────────────────────
+// ── BLOCK USER ────────────────────────────────────────────────────────────────
 export const blockUser = async (req, res) => {
   try {
     const myId = req.user._id;
