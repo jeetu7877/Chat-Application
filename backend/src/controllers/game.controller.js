@@ -67,7 +67,7 @@ export const getPlayerStats = async (req, res) => {
       { icon: "🏆", label: "First Win",    unlocked: wins >= 1     },
       { icon: "🔥", label: "5 Win Streak", unlocked: streak >= 5   },
       { icon: "⚡", label: "Speed Demon",  unlocked: totalGames >= 10 },
-      { icon: "👑", label: "Champion",     unlocked: wins >= 20    },
+      { icon: "👑", label: "Champion",      unlocked: wins >= 20    },
       { icon: "🎯", label: "Sharpshooter", unlocked: wins >= 50    },
       { icon: "🧠", label: "Big Brain",    unlocked: wins >= 100   },
     ];
@@ -86,5 +86,23 @@ export const getPlayerStats = async (req, res) => {
   } catch (error) {
     console.error("Get stats error:", error);
     res.status(500).json({ error: "Failed to get stats" });
+  }
+};
+
+// ── ✅ NAYA: Permanent Database Clear Engine ──────────────────────────────────
+export const clearGameHistory = async (req, res) => {
+  try {
+    const player = req.user._id;
+
+    // 🎯 STRICT MONGODB DELETE: Is player ke saare match records ko flush kar do
+    await GameResult.deleteMany({ player });
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Sari game history permanent database se clear ho gayi h!" 
+    });
+  } catch (error) {
+    console.error("Clear game history error:", error);
+    res.status(500).json({ error: "Failed to clear match history from database" });
   }
 };
