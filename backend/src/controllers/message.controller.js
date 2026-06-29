@@ -224,8 +224,7 @@ export const getMessages = async (req, res) => {
   }
 };
 
-// ── SEND MESSAGE (Updated Cloudinary Document Parser Fix) ──────────────
-// ── SEND MESSAGE (Updated Cloudinary Auto Resource Type Fix) ──────────────
+// ── SEND MESSAGE (Ultimate Cloudinary PDF View Fix) ──────────────
 export const sendMessage = async (req, res) => {
   try {
     const { text, image, audio, file, fileName, fileType, documentFile, locationUrl, fileSize, mimeType } = req.body;
@@ -253,12 +252,16 @@ export const sendMessage = async (req, res) => {
       audioUrl = uploadResponse.secure_url;
     }
 
-    // 3. ✅ FIX: Handle Documents (PDF, DOCX, etc.) with resource_type: "auto"
-    // 'auto' lagane se Cloudinary isey public access allow karta h jisse 401 error nhi aata
+    // 3. ✅ FIX: Pure PDF/Docx Verification upload stream logic
     const targetDoc = documentFile || file;
+    const currentMime = fileType || mimeType || "";
+
     if (targetDoc) {
+      // 🎯 CRITICAL CHECK: Agar PDF hai toh "image" resource type, baaki docs ke liye "raw"
+      const isPDF = currentMime.toLowerCase().includes("pdf") || (fileName && fileName.toLowerCase().endsWith(".pdf"));
+      
       const uploadResponse = await cloudinary.uploader.upload(targetDoc, {
-        resource_type: "auto", // 🎯 CRITICAL FIX: Cloudinary auto-detects PDF and opens it publicly
+        resource_type: isPDF ? "image" : "raw", 
         folder: "document_messages",
       });
       docUrl = uploadResponse.secure_url;
@@ -274,7 +277,7 @@ export const sendMessage = async (req, res) => {
       locationUrl: locationUrl || null,
       file: docUrl || fileUrl,
       fileName: fileName || "Document.pdf",
-      fileType: fileType || mimeType || "application/pdf",
+      fileType: currentMime || "application/pdf",
       fileSize: fileSize || "Attachment",
     });
 
