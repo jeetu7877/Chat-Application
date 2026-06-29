@@ -225,6 +225,7 @@ export const getMessages = async (req, res) => {
 };
 
 // ── SEND MESSAGE (Updated Cloudinary Document Parser Fix) ──────────────
+// ── SEND MESSAGE (Updated Cloudinary Auto Resource Type Fix) ──────────────
 export const sendMessage = async (req, res) => {
   try {
     const { text, image, audio, file, fileName, fileType, documentFile, locationUrl, fileSize, mimeType } = req.body;
@@ -238,22 +239,26 @@ export const sendMessage = async (req, res) => {
 
     let imageUrl, audioUrl, fileUrl, docUrl;
 
+    // 1. Handle Images (Gallery / Camera)
     if (image) {
       const uploadResponse = await cloudinary.uploader.upload(image);
       imageUrl = uploadResponse.secure_url;
     }
+
+    // 2. Handle Audio Messages
     if (audio) {
       const uploadResponse = await cloudinary.uploader.upload(audio, {
         resource_type: "video", folder: "audio_messages",
       });
       audioUrl = uploadResponse.secure_url;
     }
-    
-    // ✅ CRITICAL FIX: Base64 Documents ko Cloudinary par strict 'raw' folder me parse kiya
+
+    // 3. ✅ FIX: Handle Documents (PDF, DOCX, etc.) with resource_type: "auto"
+    // 'auto' lagane se Cloudinary isey public access allow karta h jisse 401 error nhi aata
     const targetDoc = documentFile || file;
     if (targetDoc) {
       const uploadResponse = await cloudinary.uploader.upload(targetDoc, {
-        resource_type: "raw", 
+        resource_type: "auto", // 🎯 CRITICAL FIX: Cloudinary auto-detects PDF and opens it publicly
         folder: "document_messages",
       });
       docUrl = uploadResponse.secure_url;
@@ -265,9 +270,9 @@ export const sendMessage = async (req, res) => {
       text,
       image: imageUrl,
       audio: audioUrl,
-      documentFile: docUrl,
+      documentFile: docUrl || fileUrl,
       locationUrl: locationUrl || null,
-      file: docUrl,
+      file: docUrl || fileUrl,
       fileName: fileName || "Document.pdf",
       fileType: fileType || mimeType || "application/pdf",
       fileSize: fileSize || "Attachment",
@@ -284,7 +289,6 @@ export const sendMessage = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
-
 // ── DELETE MESSAGE ────────────────────────────────────────────────────────────
 export const deleteMessage = async (req, res) => {
   try {
