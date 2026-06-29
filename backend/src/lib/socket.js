@@ -25,10 +25,8 @@ export function getReceiverSocketId(userId){
 const userSocketMap = {};
 
 // ── Online Visibility ──────────────────────────────────────────────────────────
-// In-memory cache: kis userId ne apna online status hide kiya hai
 const hiddenStatusUsers = new Set();
 
-// Sirf wahi userIds bhejo jo connected hain AND hide nahi kiya hai
 const broadcastOnlineUsers = () => {
     const visibleUserIds = Object.keys(userSocketMap).filter(
         (id) => !hiddenStatusUsers.has(id)
@@ -64,7 +62,6 @@ io.on("connection", async (socket) => {
     if (userId && userId !== "undefined") {
         userSocketMap[userId] = socket.id;
 
-        // ✅ Connect hote hi DB se check karo ki user ne status hide kiya hai ya nahi
         try {
             const user = await User.findById(userId).select("hideOnlineStatus");
             if (user?.hideOnlineStatus) {
@@ -80,7 +77,6 @@ io.on("connection", async (socket) => {
     console.log("✅ User connected:", userId);
     broadcastOnlineUsers();
 
-    // ── Online Visibility toggle (real-time, bina reconnect ke) ────────────────
     socket.on("update:hideOnlineStatus", ({ hide }) => {
         if (!userId) return;
         if (hide) {
@@ -91,7 +87,6 @@ io.on("connection", async (socket) => {
         broadcastOnlineUsers();
     });
 
-    // ── Typing ────────────────────────────────────────────────────────────────
     socket.on("typing", ({ receiverId }) => {
         const sid = getReceiverSocketId(receiverId);
         if (sid) io.to(sid).emit("typing", { senderId: userId });
@@ -129,7 +124,6 @@ io.on("connection", async (socket) => {
             room.status = "playing";
             room.currentTurn = room.players[0];
 
-            // ── TicTacToe start ──
             if (gameId === "ttt") {
                 room.board = Array(9).fill(null);
                 io.to(roomId).emit("game:start", {
@@ -143,7 +137,6 @@ io.on("connection", async (socket) => {
                 });
             }
 
-            // ── GTN start: server dono ko alag alag target deta hai ──
             if (gameId === "gtn") {
                 room.gtnAttempts = { [room.players[0]]: 0, [room.players[1]]: 0 };
                 room.gtnSolved   = { [room.players[0]]: false, [room.players[1]]: false };
@@ -162,7 +155,6 @@ io.on("connection", async (socket) => {
                 if (s1) io.to(s1).emit("game:start", { roomId, data: { target: t1 } });
             }
 
-            // ── EQ start ──
             if (gameId === "eq") {
                 room.eqScores = {
                     [room.players[0]]: 0,
@@ -175,7 +167,6 @@ io.on("connection", async (socket) => {
                 });
             }
 
-            // ── RPS start ──
             if (gameId === "rps") {
                 room.choices = {};
                 room.roundScores = {
@@ -200,7 +191,6 @@ io.on("connection", async (socket) => {
         const room = gameRooms[roomId];
         if (!room) return;
 
-        // ── TicTacToe move ──────────────────────────────────────────────────
         if (index !== undefined && symbol !== undefined) {
             if (room.currentTurn !== userId) return;
             if (room.board[index]) return;
@@ -239,7 +229,6 @@ io.on("connection", async (socket) => {
             }
         }
 
-        // ── GTN move ────────────────────────────────────────────────────────
         if (data?.type === "guess") {
             const { attempts: attemptCount, correct, failed } = data;
 
@@ -306,7 +295,6 @@ io.on("connection", async (socket) => {
             }
         }
 
-        // ── RPS move ────────────────────────────────────────────────────────
         if (data?.choice) {
             if (!room.choices) room.choices = {};
             room.choices[userId] = data;
@@ -349,7 +337,6 @@ io.on("connection", async (socket) => {
             }
         }
 
-        // ── EQ move ───────────────────────────────────────────────────────────
         if (data?.type === "eq_progress") {
             const { score, finished } = data;
             if (!room.eqScores) room.eqScores = {};
@@ -377,7 +364,7 @@ io.on("connection", async (socket) => {
                     const myScore  = room.eqScores[userId];
                     const oppScore = room.eqScores[oppId];
                     let winner;
-                    if (myScore > oppScore)       winner = userId;
+                    if (myScore > oppScore)      winner = userId;
                     else if (oppScore > myScore)  winner = oppId;
                     else                           winner = "draw";
 
@@ -390,7 +377,6 @@ io.on("connection", async (socket) => {
         }
     });
 
-    // ── Game: Over (client side se) ──────────────────────────────────────────
     socket.on("game:over", ({ roomId, result }) => {
         const room = gameRooms[roomId];
         if (!room) return;
@@ -398,7 +384,6 @@ io.on("connection", async (socket) => {
         delete gameRooms[roomId];
     });
 
-    // ── Game: Leave ───────────────────────────────────────────────────────────
     socket.on("game:leave", ({ roomId }) => {
         socket.leave(roomId);
         if (gameRooms[roomId]) {
@@ -434,12 +419,19 @@ io.on("connection", async (socket) => {
         if (sid) io.to(sid).emit("call-ended");
     });
 
-    // ── Disconnect ────────────────────────────────────────────────────────────
-    socket.on("disconnect", () => {
+    // ── Disconnect (Added Asynchronous Database Sync Listener) ────────────────
+    socket.on("disconnect", async () => {
         console.log("❌ User disconnected:", userId);
         if (userId && userId !== "undefined") {
+            // 🎯 REALTIME DATABASE LOG: Offline jaate hi timestamp save karo
+            try {
+                await User.findByIdAndUpdate(userId, { lastActive: new Date() });
+            } catch (err) {
+                console.log("Error updating lastActive dynamic presence timestamp:", err.message);
+            }
+
             delete userSocketMap[userId];
-            hiddenStatusUsers.delete(userId); // cleanup
+            hiddenStatusUsers.delete(userId); 
         }
         broadcastOnlineUsers();
     });
