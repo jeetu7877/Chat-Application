@@ -191,24 +191,42 @@ export const signup = async (req, res) => {
 // ── Login ─────────────────────────────────────────────────────────────────────
 export const login = async (req, res) => {
   const { email, password } = req.body;
+
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: "Invalid credentials" });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "No account found with this email. Please sign up first.",
+      });
+    }
 
     const isPasswordCorrect = await bcrypt.compare(password, user.password);
-    if (!isPasswordCorrect) return res.status(400).json({ message: "Invalid credentials" });
+
+    if (!isPasswordCorrect) {
+      return res.status(401).json({
+        message: "Incorrect password. Please try again.",
+      });
+    }
 
     const token = generateToken(user._id, res);
+
     res.status(200).json({
-      _id: user._id, fullName: user.fullName,
-      email: user.email, profilePic: user.profilePic, token,
+      _id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      profilePic: user.profilePic,
+      token,
     });
+
   } catch (error) {
     console.log("Error in login controller", error.message);
-    res.status(500).json({ message: "Internal Server Error" });
+
+    res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
-
 // ── Logout ────────────────────────────────────────────────────────────────────
 export const logout = (req, res) => {
   try {
