@@ -2,15 +2,14 @@
   "name": "backend",
   "version": "1.0.0",
   "main": "src/index.js",
+  "type": "module",
   "scripts": {
-  "dev": "nodemon src/index.js",
-  "build": "echo 'Deploying conversion binaries...' && mkdir -p libreoffice && if [ ! -f './libreoffice/instdir/program/soffice' ] && [ ! -f './libreoffice/program/soffice' ]; then curl -L https://github.com/vladgolubev/serverless-libreoffice/releases/download/6.1.0/lo.tar.gz | tar -xz -C ./libreoffice; fi && chmod -R +x ./libreoffice/",
-  "start": "node src/index.js"
-}
+    "dev": "nodemon src/index.js",
+    "build": "echo 'Deploying conversion binaries...' && mkdir -p libreoffice && if [ ! -f './libreoffice/instdir/program/soffice' ] && [ ! -f './libreoffice/program/soffice' ]; then curl -L https://github.com/vladgolubev/serverless-libreoffice/releases/download/6.1.0/lo.tar.gz | tar -xz -C ./libreoffice; fi && chmod -R +x ./libreoffice/",
+    "start": "node src/index.js"
   },
   "keywords": [],
   "author": "",
-  "type": "module",
   "license": "ISC",
   "dependencies": {
     "axios": "^1.7.9",
