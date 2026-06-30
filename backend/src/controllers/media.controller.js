@@ -52,15 +52,33 @@ export const convertPdfToWordController = async (req, res) => {
     // Dynamic configuration engine maps: checks path for custom cloud Linux packages structure 
    // Check execution environment bounds cleanly
 // ─── HIGH PRECISION ABSOLUTE PATH ENGINE ───
+// --- DYNAMIC PATH LOCATOR FOR RENDER WORKSPACE ---
 const isRenderLinux = fs.existsSync("/opt/render") || process.env.RENDER === "true";
+const projectRoot = path.resolve();
 
-// Project root directory ka configuration path locate karein
-const projectRoot = path.resolve(); 
+let binaryPath = "libreoffice"; // Fallback local engine command
 
-const libreOfficeCommand = isRenderLinux 
-  ? `"${path.join(projectRoot, 'libreoffice', 'instdir', 'program', 'soffice')}" --headless --infilter="writer_pdf_import" --convert-to docx --outdir "${runtimeTmpDir}" "${tempPdfPath}"`
+if (isRenderLinux) {
+  // Path Option A (Jo hum expect kar rahe hain)
+  const optionA = path.join(projectRoot, 'libreoffice', 'instdir', 'program', 'soffice');
+  // Path Option B (Agar tar command bina upper directory layer ke extract hui ho)
+  const optionB = path.join(projectRoot, 'libreoffice', 'program', 'soffice');
+  
+  if (fs.existsSync(optionA)) {
+    binaryPath = optionA;
+  } else if (fs.existsSync(optionB)) {
+    binaryPath = optionB;
+  } else {
+    // Universal dynamic recovery check: direct system directory me binary locate karo
+    const standardBinaryCheck = path.join(projectRoot, 'libreoffice', 'soffice');
+    binaryPath = fs.existsSync(standardBinaryCheck) ? standardBinaryCheck : optionA;
+  }
+}
+
+// Final High Precision CLI String Setup
+const libreOfficeCommand = isRenderLinux
+  ? `"${binaryPath}" --headless --infilter="writer_pdf_import" --convert-to docx --outdir "${runtimeTmpDir}" "${tempPdfPath}"`
   : `libreoffice --headless --infilter="writer_pdf_import" --convert-to docx --outdir "${runtimeTmpDir}" "${tempPdfPath}"`;
-    // Spin up asynchronous child process worker layer
     exec(libreOfficeCommand, (execError, stdout, stderr) => {
       if (execError) {
         console.error("LibreOffice CLI Invalidation Error:", execError);
