@@ -1,6 +1,6 @@
 import express from "express";
 import upload from "../middleware/upload.middleware.js";
-import { protectRoute } from "../middleware/auth.middleware.js"; // ✅ अपने प्रोजेक्ट के ऑथ मिडलवेयर पाथ के अनुसार देखें
+import { protectRoute } from "../middleware/auth.middleware.js";
 import {
   uploadImage,
   uploadVideo,
@@ -9,14 +9,18 @@ import {
   toggleFavorite,
   getFavorites,
   getAlbums,
+  convertPdfToWordController, // 🆕 Controller function imported
 } from "../controllers/media.controller.js";
 
 const router = express.Router();
 
-// 1. फोटो अपलोड एंडपॉइंट (एक बार में 1 इमेज 'file' की नाम से आएगी)
+// 🆕 0. PDF to Word Conversion Engine Endpoint (Accepts 'pdfFile' multipart parameter)
+router.post("/pdf-to-word", upload.single("pdfFile"), convertPdfToWordController);
+
+// 1. फोटो अपलोड एंडपॉइंट 
 router.post("/upload", protectRoute, upload.single("file"), uploadImage);
 
-// 2. वीडियो अपलोड एंडपॉइंट (एक बार में 1 वीडियो 'file' की नाम से आएगी)
+// 2. वीडियो अपलोड एंडपॉइंट
 router.post("/upload-video", protectRoute, upload.single("file"), uploadVideo);
 
 // 3. यूजर की पूरी गैलरी गेट करने के लिए
@@ -31,7 +35,7 @@ router.put("/favorite/:id", protectRoute, toggleFavorite);
 // 6. केवल फेवरेट मीडिया लिस्ट गेट करने के लिए
 router.get("/favorites", protectRoute, getFavorites);
 
-// 7. ऑटोमैटिक एलबम्स डेटा (Photos, Videos, Recent) गेट करने के लिए
+// 7. ऑटोमैटिक एलबम्स डेटा गेट करने के लिए
 router.get("/albums", protectRoute, getAlbums);
 
 export default router;
