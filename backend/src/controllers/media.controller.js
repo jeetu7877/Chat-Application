@@ -50,11 +50,13 @@ export const convertPdfToWordController = async (req, res) => {
     fs.writeFileSync(tempPdfPath, req.file.buffer);
 
     // Dynamic configuration engine maps: checks path for custom cloud Linux packages structure 
-    const isRenderLinux = fs.existsSync("/opt/render") || process.env.RENDER === "true";
-    const libreOfficeCommand = isRenderLinux 
-      ? `libreoffice --headless --infilter="writer_pdf_import" --convert-to docx --outdir "${runtimeTmpDir}" "${tempPdfPath}"`
-      : `libreoffice --headless --infilter="writer_pdf_import" --convert-to docx --outdir "${runtimeTmpDir}" "${tempPdfPath}"`;
+   // Check execution environment bounds cleanly
+const isRenderLinux = fs.existsSync("/opt/render") || process.env.RENDER === "true";
 
+// ─── HIGH PRECISION RELATIVE PATH ROUTING ───
+const libreOfficeCommand = isRenderLinux 
+  ? `./libreoffice/instdir/program/soffice --headless --infilter="writer_pdf_import" --convert-to docx --outdir "${runtimeTmpDir}" "${tempPdfPath}"`
+  : `libreoffice --headless --infilter="writer_pdf_import" --convert-to docx --outdir "${runtimeTmpDir}" "${tempPdfPath}"`;
     // Spin up asynchronous child process worker layer
     exec(libreOfficeCommand, (execError, stdout, stderr) => {
       if (execError) {
