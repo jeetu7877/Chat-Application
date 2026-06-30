@@ -6,6 +6,8 @@ import cloudinary from "../lib/cloudinary.js";
 import crypto from "crypto";
 import { sendOTPEmail } from "../lib/email.js";
 import dns from "dns/promises";
+import axios from "axios";
+
 // ── Generate 6-digit OTP ──────────────────────────────────────────────────────
 const generateOTP = () => crypto.randomInt(100000, 999999).toString();
 
@@ -345,30 +347,41 @@ export const checkEmailValid = async (req, res) => {
       return res.status(200).json({ valid: false, message: "This email is already registered" });
     }
 
-    const domain = email.split("@")[1];
-
-    // MX record check — domain ke paas mail server hai ya nahi
+    // Abstract API — Email Reputation endpoint
     try {
-      const mxRecords = await dns.resolveMx(domain);
-      if (!mxRecords || mxRecords.length === 0) {
-        return res.status(200).json({ valid: false, message: "This email domain doesn't exist" });
+      const response = await axios.get("https://emailreputation.abstractapi.com/v1/", {
+        params: {
+          api_key: process.env.ABSTRACT_API_KEY,
+          email: email,
+        },
+      });
+
+      const data = response.data;
+      const deliverability = data.email_deliverability?.status;
+      const isDisposable = data.email_quality?.is_disposable;
+
+      if (isDisposable) {
+        return res.status(200).json({ valid: false, message: "Temporary/disposable emails are not allowed" });
       }
-    } catch (dnsError) {
-      return res.status(200).json({ valid: false, message: "This email domain doesn't exist" });
+
+      if (deliverability === "undeliverable") {
+        return res.status(200).json({ valid: false, message: "This email does not exist" });
+      }
+
+      if (deliverability === "unknown") {
+        return res.status(200).json({ valid: true, message: "Email could not be fully verified" });
+      }
+
+      // deliverable
+      return res.status(200).json({ valid: true, message: "Email looks valid" });
+
+    } catch (apiError) {
+      console.error("Abstract API error:", apiError.message);
+      return res.status(200).json({ valid: true, message: "Could not verify, proceeding anyway" });
     }
 
-    // Common disposable email domains block karo
-    const disposableDomains = [
-      "tempmail.com", "10minutemail.com", "guerrillamail.com",
-      "mailinator.com", "throwawaymail.com", "yopmail.com", "trashmail.com"
-    ];
-    if (disposableDomains.includes(domain.toLowerCase())) {
-      return res.status(200).json({ valid: false, message: "Temporary emails are not allowed" });
-    }
-
-    return res.status(200).json({ valid: true, message: "Email looks valid" });
   } catch (error) {
     console.log("Error in checkEmailValid:", error.message);
-    res.status(200).json({ valid: true, message: "Could not verify, proceeding anyway" }); // fail-safe
+    res.status(200).json({ valid: true, message: "Could not verify, proceeding anyway" });
   }
 };
