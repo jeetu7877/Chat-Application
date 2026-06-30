@@ -2,11 +2,14 @@ import express from "express";
 import {
   checkAuth, login, logout, signup, updateProfile,
   blockUser, unblockUser, getBlockedUsers, getAllUsers,
-  sendOTP, verifyOTP, resendOTP,
+  sendOTP, verifyOTP, resendOTP, checkEmailValid,
 } from "../controllers/auth.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
+
+// Email validation
+router.post("/check-email", checkEmailValid); // ← Add
 
 // OTP routes
 router.post("/send-otp", sendOTP);
