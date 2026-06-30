@@ -1,4 +1,5 @@
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const SENDER_EMAIL = "jeet.allonline2005@gmail.com"; // ✅ wahi email jo verify kiya
 
 export const sendOTPEmail = async (email, fullName, otp) => {
   const html = `
@@ -18,23 +19,24 @@ export const sendOTPEmail = async (email, fullName, otp) => {
     </div>
   `;
 
-  const response = await fetch("https://api.resend.com/emails", {
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
+      "api-key": BREVO_API_KEY,
       "Content-Type": "application/json",
+      "Accept": "application/json",
     },
     body: JSON.stringify({
-      from: "My Chat App <onboarding@resend.dev>",
-      to: [email],
+      sender: { name: "My Chat App", email: SENDER_EMAIL },
+      to: [{ email: email, name: fullName }],
       subject: "Verify Your Email — My Chat",
-      html,
+      htmlContent: html,
     }),
   });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    console.error("Resend API error:", errorData);
+    console.error("Brevo API error:", errorData);
     throw new Error("Failed to send OTP email");
   }
 };
