@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import cloudinary from "../lib/cloudinary.js";
 import crypto from "crypto";
 import { sendOTPEmail } from "../lib/email.js";
-
+import dns from "dns/promises";
 // ── Generate 6-digit OTP ──────────────────────────────────────────────────────
 const generateOTP = () => crypto.randomInt(100000, 999999).toString();
 
@@ -327,5 +327,48 @@ export const getBlockedUsers = async (req, res) => {
   } catch (error) {
     console.log("Error in getBlockedUsers controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ── Verify Email Exists (MX Record Check) ─────────────────────────────────────
+export const checkEmailValid = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(200).json({ valid: false, message: "Invalid email format" });
+    }
+
+    // Already registered check
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(200).json({ valid: false, message: "This email is already registered" });
+    }
+
+    const domain = email.split("@")[1];
+
+    // MX record check — domain ke paas mail server hai ya nahi
+    try {
+      const mxRecords = await dns.resolveMx(domain);
+      if (!mxRecords || mxRecords.length === 0) {
+        return res.status(200).json({ valid: false, message: "This email domain doesn't exist" });
+      }
+    } catch (dnsError) {
+      return res.status(200).json({ valid: false, message: "This email domain doesn't exist" });
+    }
+
+    // Common disposable email domains block karo
+    const disposableDomains = [
+      "tempmail.com", "10minutemail.com", "guerrillamail.com",
+      "mailinator.com", "throwawaymail.com", "yopmail.com", "trashmail.com"
+    ];
+    if (disposableDomains.includes(domain.toLowerCase())) {
+      return res.status(200).json({ valid: false, message: "Temporary emails are not allowed" });
+    }
+
+    return res.status(200).json({ valid: true, message: "Email looks valid" });
+  } catch (error) {
+    console.log("Error in checkEmailValid:", error.message);
+    res.status(200).json({ valid: true, message: "Could not verify, proceeding anyway" }); // fail-safe
   }
 };
