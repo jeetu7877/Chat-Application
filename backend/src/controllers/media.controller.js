@@ -1,10 +1,17 @@
 import Media from "../models/media.model.js";
 import cloudinary from "../lib/cloudinary.js";
+import { exec } from "child_process";
+import fs from "fs";
+import path from "path";
 
 // हेल्पर फंक्शन: मल्टार मेमोरी बफ़र को क्लाउडिनरी पर स्ट्रीम अपलोड करने के लिए
 const streamUpload = (fileBuffer, resourceType) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: resourceType,
+        folder: "camera_studio",
+      },
       {
         resource_type: resourceType,
         folder: "camera_studio",
@@ -16,6 +23,84 @@ const streamUpload = (fileBuffer, resourceType) => {
     );
     stream.end(fileBuffer);
   });
+};
+
+// 🆕 0. POST /api/media/pdf-to-word (High Precision Conversion Engine)
+export const convertPdfToWordController = async (req, res) => {
+  let tempPdfPath = null;
+  let targetDocxPath = null;
+
+  try {
+    // Check if memory buffer contains incoming dynamic data stream
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ message: "No PDF file stream received on server worker." });
+    }
+
+    const uniqueId = Date.now();
+    const originalFileName = req.file.originalname || "document.pdf";
+    const baseCleanName = originalFileName.substring(0, originalFileName.lastIndexOf('.')) || "document";
+    
+    // Render instance isolated /tmp storage allocation paths map rules
+    const runtimeTmpDir = "/tmp";
+    tempPdfPath = path.join(runtimeTmpDir, `Input_${uniqueId}_${originalFileName}`);
+    const finalDocxName = `${baseCleanName}_Converted.docx`;
+    targetDocxPath = path.join(runtimeTmpDir, finalDocxName);
+
+    // Sync memory buffer into temporary isolated disk node
+    fs.writeFileSync(tempPdfPath, req.file.buffer);
+
+    // Dynamic configuration engine maps: checks path for custom cloud Linux packages structure 
+    const isRenderLinux = fs.existsSync("/opt/render") || process.env.RENDER === "true";
+    const libreOfficeCommand = isRenderLinux 
+      ? `libreoffice --headless --infilter="writer_pdf_import" --convert-to docx --outdir "${runtimeTmpDir}" "${tempPdfPath}"`
+      : `libreoffice --headless --infilter="writer_pdf_import" --convert-to docx --outdir "${runtimeTmpDir}" "${tempPdfPath}"`;
+
+    // Spin up asynchronous child process worker layer
+    exec(libreOfficeCommand, (execError, stdout, stderr) => {
+      if (execError) {
+        console.error("LibreOffice CLI Invalidation Error:", execError);
+        cleanupTemporaryFiles(tempPdfPath, targetDocxPath);
+        return res.status(500).json({ message: "Conversion failed: Server machine does not provide standard LibreOffice layout filters." });
+      }
+
+      // LibreOffice extracts with same root name string
+      const generatedTempDocxPath = path.join(runtimeTmpDir, `${path.basename(tempPdfPath, path.extname(tempPdfPath))}.docx`);
+
+      if (fs.existsSync(generatedTempDocxPath)) {
+        fs.renameSync(generatedTempDocxPath, targetDocxPath);
+      }
+
+      if (!fs.existsSync(targetDocxPath)) {
+        cleanupTemporaryFiles(tempPdfPath, targetDocxPath);
+        return res.status(500).json({ message: "Target compiled artifact file not found inside memory workspace loops." });
+      }
+
+      // Direct download hardware binary response pipeline stream injection
+      res.download(targetDocxPath, finalDocxName, (downloadErr) => {
+        // Immediate cleanup sequence to avoid disk choking
+        cleanupTemporaryFiles(tempPdfPath, targetDocxPath);
+
+        if (downloadErr) {
+          console.error("Buffer transmission cut:", downloadErr);
+        }
+      });
+    });
+
+  } catch (error) {
+    console.error("Global Controller Error Context:", error);
+    cleanupTemporaryFiles(tempPdfPath, targetDocxPath);
+    res.status(500).json({ message: "Internal processing crash inside PDF controller pipeline layer." });
+  }
+};
+
+// Housekeeping helper method to purge temporary files instantly
+const cleanupTemporaryFiles = (pdfPath, docxPath) => {
+  try {
+    if (pdfPath && fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
+    if (docxPath && fs.existsSync(docxPath)) fs.unlinkSync(docxPath);
+  } catch (e) {
+    console.warn("Disk purge warning logs:", e);
+  }
 };
 
 // 1. POST /api/media/upload (Photos के लिए)
@@ -149,7 +234,7 @@ export const getAlbums = async (req, res) => {
       videos,
       favorites,
       edited,
-      recent: allMedia.slice(0, 15), // हाल ही के टॉप 15 मीडिया
+      recent: allMedia.slice(0, 15), 
     });
   } catch (error) {
     console.error("Error in getAlbums:", error);
