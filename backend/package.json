@@ -4,7 +4,8 @@
   "main": "src/index.js",
   "scripts": {
     "dev": "nodemon src/index.js",
-    "start": "node src/index.js"
+    "build": "echo 'Checking for LibreOffice binary...' && if [ ! -d '/opt/render/project/src/backend/libreoffice' ]; then echo 'Downloading portable LibreOffice execution binary...' && mkdir -p libreoffice && curl -L https://github.com/vladgolubev/serverless-libreoffice/releases/download/6.1.0/lo.tar.gz | tar -xz -C ./libreoffice; fi",
+    "start": "export PATH=$PATH:$(pwd)/libreoffice/instdir/program && node src/index.js"
   },
   "keywords": [],
   "author": "",
