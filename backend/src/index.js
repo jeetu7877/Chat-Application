@@ -41,10 +41,19 @@ app.use("/api/game", gameRoutes);
 app.use("/api/media", mediaRoutes);
 app.use("/api/status", statusRoutes); // ✅ Status routes register
 
+// ✅ UPDATED PRODUCTION REDIRECT LAYER FOR BALANCED INTERFACES
 if (process.env.NODE_ENV === "production") {
-  app.use(express.static(path.join(__dirname, "../frontend/dist")));
+  // Jab koi direct backend root domain link open karega, toh yeh cleanly user ko clear json return karega
+  app.get("/", (req, res) => {
+    res.status(200).json({ 
+      message: "Server is online and processing pipelines safely.",
+      clientInterface: "https://starlit-moxie-782d49.netlify.app"
+    });
+  });
+  
+  // Dynamic universal fallback catcher rules
   app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
+    res.status(404).json({ error: "API route endpoint not found inside workspace." });
   });
 }
 app.options("*", cors());
