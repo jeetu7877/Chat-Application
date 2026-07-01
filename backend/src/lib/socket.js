@@ -80,6 +80,23 @@ io.on("connection", async (socket) => {
     console.log("✅ User connected:", userId);
     broadcastOnlineUsers();
 
+    // ── 🆕 FIREBASE WHATSAPP-STYLE DYNAMIC CHAT ROOM TRACKERS ──
+    // Jab user kisi chat screen par focused hoga, toh frontend room join trigger emit karega
+    socket.on("join:chat_room", ({ chatId }) => {
+        if (chatId) {
+            socket.join(String(chatId));
+            console.log(`👤 Socket [${socket.id}] entered chat focus matrix layer room: ${chatId}`);
+        }
+    });
+
+    // Jab user chat screen ko change karega ya switch karega backboard par
+    socket.on("leave:chat_room", ({ chatId }) => {
+        if (chatId) {
+            socket.leave(String(chatId));
+            console.log(`👤 Socket [${socket.id}] exited chat focus matrix layer room: ${chatId}`);
+        }
+    });
+
     socket.on("update:hideOnlineStatus", ({ hide }) => {
         if (!userId) return;
         if (hide) {
