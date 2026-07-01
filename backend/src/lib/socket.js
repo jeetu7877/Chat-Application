@@ -441,15 +441,17 @@ io.on("connection", async (socket) => {
 
     // ── Disconnect (Added Asynchronous Database Sync + Live Emit Broadcast) ──
     socket.on("disconnect", async () => {
-        console.log("❌ User disconnected:", userId);
-        if (userId && userId !== "undefined") {
+    console.log("❌ User disconnected:", userId);
+    if (userId && userId !== "undefined") {
+        
+        // 🆕 CRITICAL FIX: sirf tabhi delete karo jab map me maujood socket id
+        // isi (disconnecting) socket ki ho — agar naya connection already replace
+        // kar chuka hai to purana disconnect event usse delete na kare
+        if (userSocketMap[userId] === socket.id) {
             const currentOfflineTime = new Date();
-            
-            try {
-                // 1. Database me strictly User ka app close exact current time update kiya
-                await User.findByIdAndUpdate(userId, { lastActive: currentOfflineTime });
 
-                // 2. 🎯 REALTIME SYNC BROADCAST: Baaki doston ko realtime signal bhein taaki header text badal jaye!
+            try {
+                await User.findByIdAndUpdate(userId, { lastActive: currentOfflineTime });
                 socket.broadcast.emit("userOfflineUpdate", {
                     userId: userId,
                     lastActive: currentOfflineTime
@@ -459,10 +461,10 @@ io.on("connection", async (socket) => {
             }
 
             delete userSocketMap[userId];
-            hiddenStatusUsers.delete(userId); 
+            hiddenStatusUsers.delete(userId);
+        } else {
+            console.log(`⚠️ Stale disconnect ignored for ${userId} — newer socket already active`);
         }
-        broadcastOnlineUsers();
-    });
-});
-
-export { io, app, server };
+    }
+    broadcastOnlineUsers();
+}); io, app, server };
