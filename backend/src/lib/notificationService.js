@@ -25,6 +25,10 @@ export const sendPushNotification = async ({ senderName, receiverId, message, ch
     }
 
     const receiver = await User.findById(receiverId);
+     if (receiver && receiver.notificationsEnabled === false) {
+      console.log(`🔕 Push skipped — user ${receiverId} has notifications disabled`);
+      return;
+    }
     if (!receiver || !receiver.fcmTokens || receiver.fcmTokens.length === 0) {
       return; // Safe execution escape route when target user has zero token links
     }
