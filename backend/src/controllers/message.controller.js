@@ -2,6 +2,7 @@ import Message from "../models/message.model.js";
 import User from "../models/user.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
+import { sendPushNotification } from "../services/notification.service.js"; // 🆕 Import notification service
 import bcrypt from "bcryptjs";
 
 // ── FETCH USERS FOR SIDEBAR (Hides Locked Chats) ──────────────────────────
@@ -227,13 +228,13 @@ export const getMessages = async (req, res) => {
   }
 };
 
-// ── SEND MESSAGE (Updated Parameter with Contact Share Pipeline) ──────────────
+// ── SEND MESSAGE ─────────────────────────────────────────────────────────────
 export const sendMessage = async (req, res) => {
   try {
-    // ✅ destructured sharedContactId from body payload mapping
     const { text, image, audio, file, fileName, fileType, documentFile, locationUrl, fileSize, mimeType, sharedContactId } = req.body;
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
+    const senderName = req.user.fullName; // Extracts sender metrics cleanly
 
     const receiver = await User.findById(receiverId);
     if (receiver?.blockedUsers?.includes(senderId.toString())) {
@@ -283,13 +284,34 @@ export const sendMessage = async (req, res) => {
       fileName: fileName || "Document.pdf",
       fileType: currentMime || "application/pdf",
       fileSize: fileSize || "Attachment",
-      sharedContactId: sharedContactId || null, // ✅ Linked correctly here
+      sharedContactId: sharedContactId || null,
     });
 
     await newMessage.save();
 
     const receiverSocketId = getReceiverSocketId(receiverId);
-    if (receiverSocketId) io.to(receiverSocketId).emit("newMessage", newMessage);
+    let isUserViewingChat = false;
+
+    if (receiverSocketId) {
+      // Direct Web Socket Delivery Mechanism
+      io.to(receiverSocketId).emit("newMessage", newMessage);
+
+      // Verify if receiver node is actively active inside target client room bounds
+      const clientRooms = io.sockets.adapter.rooms.get(String(senderId)); 
+      if (clientRooms && clientRooms.has(receiverSocketId)) {
+        isUserViewingChat = true;
+      }
+    }
+
+    // 🆕 Trigger Firebase Push Notification fallback loop if node is completely offline/unfocused
+    if (!isUserViewingChat) {
+      await sendPushNotification({
+        senderName,
+        receiverId,
+        message: newMessage,
+        chatId: senderId, // maps room identifier parameters directly
+      });
+    }
 
     res.status(201).json(newMessage);
   } catch (error) {
@@ -453,15 +475,13 @@ export const blockUser = async (req, res) => {
   }
 };
 
-
-// ── ✅ NEW SEPARATE FUNCTION: Only for Game Invite Modal (No Crashing) ──
+// ── GAME INVITE MODAL ENDPOINT ───────────────────────────────────────────────
 export const getAllUsersForInvite = async (req, res) => {
   try {
     const loggedInUserId = req.user._id;
     const loggedInUser = await User.findById(loggedInUserId);
     const blockedUserIds = loggedInUser?.blockedUsers || [];
 
-    // 🎯 Database se saare users laao (Sirf tumhein aur blocked users ko chhodkar, lock/unlock sab aayenge)
     const allUsers = await User.find({
       _id: { $ne: loggedInUserId, $nin: blockedUserIds },
     }).select("-password");
@@ -486,7 +506,7 @@ export const getAllUsersForInvite = async (req, res) => {
         return {
           ...user.toObject(),
           lastMessage: lastMsgText,
-          lastMessageTime: lastMessage?.createdAt || null, // ✅ non-chat walo ke liye null rahega par data filter nahi hoga
+          lastMessageTime: lastMessage?.createdAt || null,
           unreadCount: 0,
         };
       })
