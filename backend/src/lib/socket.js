@@ -37,6 +37,32 @@ const broadcastOnlineUsers = () => {
     io.emit("getOnlineUsers", visibleUserIds);
 };
 
+// ── 🆕 CALL STATE TRACKING (Phase 1: Socket Signaling) ──────────────────────
+// userId -> { peerId, callType, status: "ringing" | "ongoing" }
+const activeCalls = {};
+
+const isUserBusy = (userId) => {
+    return !!activeCalls[userId];
+};
+
+const setActiveCall = (userIdA, userIdB, callType, status) => {
+    activeCalls[userIdA] = { peerId: userIdB, callType, status };
+    activeCalls[userIdB] = { peerId: userIdA, callType, status };
+};
+
+const updateCallStatus = (userIdA, userIdB, status) => {
+    if (activeCalls[userIdA]) activeCalls[userIdA].status = status;
+    if (activeCalls[userIdB]) activeCalls[userIdB].status = status;
+};
+
+const clearActiveCall = (userId) => {
+    const entry = activeCalls[userId];
+    if (entry) {
+        delete activeCalls[entry.peerId];
+        delete activeCalls[userId];
+    }
+};
+
 // ── Game Rooms ────────────────────────────────────────────────────────────────
 const gameRooms = {};
 
@@ -81,7 +107,6 @@ io.on("connection", async (socket) => {
     broadcastOnlineUsers();
 
     // ── 🆕 FIREBASE WHATSAPP-STYLE DYNAMIC CHAT ROOM TRACKERS ──
-    // Jab user kisi chat screen par focused hoga, toh frontend room join trigger emit karega
     socket.on("join:chat_room", ({ chatId }) => {
         if (chatId) {
             socket.join(String(chatId));
@@ -89,7 +114,6 @@ io.on("connection", async (socket) => {
         }
     });
 
-    // Jab user chat screen ko change karega ya switch karega backboard par
     socket.on("leave:chat_room", ({ chatId }) => {
         if (chatId) {
             socket.leave(String(chatId));
@@ -412,21 +436,47 @@ io.on("connection", async (socket) => {
         }
     });
 
-    // ── Calling ───────────────────────────────────────────────────────────────
+    // ── Calling (Phase 1: rebuilt with call-state tracking) ────────────────────
     socket.on("call-user", ({ to, from, offer, callType, callerInfo }) => {
         const sid = getReceiverSocketId(to);
-        if (sid) io.to(sid).emit("incoming-call", { from, offer, callType, callerInfo });
-        else socket.emit("call-failed", { reason: "User is offline" });
+
+        if (!sid) {
+            socket.emit("call-failed", { reason: "User is offline" });
+            return;
+        }
+
+        if (isUserBusy(to)) {
+            socket.emit("call-failed", { reason: "User is busy" });
+            return;
+        }
+
+        if (isUserBusy(from)) {
+            // Safety guard: caller already tracked in a call (stale state) — refuse to double-dial
+            socket.emit("call-failed", { reason: "You are already in a call" });
+            return;
+        }
+
+        setActiveCall(from, to, callType, "ringing");
+        io.to(sid).emit("incoming-call", { from, offer, callType, callerInfo });
     });
 
     socket.on("answer-call", ({ to, answer }) => {
         const sid = getReceiverSocketId(to);
+        updateCallStatus(userId, to, "ongoing");
         if (sid) io.to(sid).emit("call-answered", { answer });
     });
 
     socket.on("reject-call", ({ to }) => {
         const sid = getReceiverSocketId(to);
+        clearActiveCall(userId);
         if (sid) io.to(sid).emit("call-rejected");
+    });
+
+    // 🆕 Caller cancels before the receiver has answered (distinct from end-call)
+    socket.on("cancel-call", ({ to }) => {
+        const sid = getReceiverSocketId(to);
+        clearActiveCall(userId);
+        if (sid) io.to(sid).emit("call-cancelled");
     });
 
     socket.on("ice-candidate", ({ to, candidate }) => {
@@ -436,15 +486,18 @@ io.on("connection", async (socket) => {
 
     socket.on("end-call", ({ to }) => {
         const sid = getReceiverSocketId(to);
-        if (sid) io.to(sid).emit("call-ended");
+        const wasActive = isUserBusy(userId);
+        clearActiveCall(userId);
+        // Only forward call-ended if there was actually an active call tracked —
+        // prevents the old "double end-call after reject" phantom toast bug.
+        if (sid && wasActive) io.to(sid).emit("call-ended");
     });
 
-    // ── Disconnect (Added Asynchronous Database Sync + Live Emit Broadcast) ──
     // ── Disconnect (Added Asynchronous Database Sync + Live Emit Broadcast) ──
     socket.on("disconnect", async () => {
         console.log("❌ User disconnected:", userId);
         if (userId && userId !== "undefined") {
-            
+
             if (userSocketMap[userId] === socket.id) {
                 const currentOfflineTime = new Date();
 
@@ -456,6 +509,14 @@ io.on("connection", async (socket) => {
                     });
                 } catch (err) {
                     console.log("Error updating lastActive dynamic presence timestamp:", err.message);
+                }
+
+                // 🆕 If user disconnects mid-call, notify their peer and clean up state
+                if (isUserBusy(userId)) {
+                    const peerId = activeCalls[userId].peerId;
+                    const peerSid = getReceiverSocketId(peerId);
+                    clearActiveCall(userId);
+                    if (peerSid) io.to(peerSid).emit("call-ended");
                 }
 
                 delete userSocketMap[userId];
