@@ -229,6 +229,7 @@ export const login = async (req, res) => {
     });
   }
 };
+
 // ── Logout ────────────────────────────────────────────────────────────────────
 export const logout = (req, res) => {
   try {
@@ -341,13 +342,11 @@ export const checkEmailValid = async (req, res) => {
       return res.status(200).json({ valid: false, message: "Invalid email format" });
     }
 
-    // Already registered check
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(200).json({ valid: false, message: "This email is already registered" });
     }
 
-    // Abstract API — Email Reputation endpoint
     try {
       const response = await axios.get("https://emailreputation.abstractapi.com/v1/", {
         params: {
@@ -372,7 +371,6 @@ export const checkEmailValid = async (req, res) => {
         return res.status(200).json({ valid: true, message: "Email could not be fully verified" });
       }
 
-      // deliverable
       return res.status(200).json({ valid: true, message: "Email looks valid" });
 
     } catch (apiError) {
@@ -383,5 +381,39 @@ export const checkEmailValid = async (req, res) => {
   } catch (error) {
     console.log("Error in checkEmailValid:", error.message);
     res.status(200).json({ valid: true, message: "Could not verify, proceeding anyway" });
+  }
+};
+
+// ── 🆕 FIREBASE PUSH ENDPOINT CONTROLLERS ────────────────────────────────────
+export const updateFCMToken = async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ message: "FCM Token is required" });
+
+    // Ensure array mapping uniqueness avoiding redundant entry streams
+    await User.findByIdAndUpdate(req.user._id, {
+      $addToSet: { fcmTokens: token }
+    });
+
+    res.status(200).json({ message: "FCM token saved successfully" });
+  } catch (error) {
+    console.log("Error in updateFCMToken controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const removeFCMToken = async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ message: "Token configuration is required" });
+
+    await User.findByIdAndUpdate(req.user._id, {
+      $pull: { fcmTokens: token }
+    });
+
+    res.status(200).json({ message: "FCM token removed successfully" });
+  } catch (error) {
+    console.log("Error in removeFCMToken controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 };
