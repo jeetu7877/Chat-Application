@@ -263,7 +263,8 @@ export const sendMessage = async (req, res) => {
 
     await newMessage.save();
 
-    // ── 🆕 SOCKET.IO & WHATSAPP PUSH TRACKING MATRIX ──
+
+   // ── SOCKET.IO & WHATSAPP PUSH TRACKING MATRIX (FIXED) ──
     const receiverSocketId = getReceiverSocketId(receiverId);
     let isUserViewingSameChat = false;
 
@@ -271,12 +272,28 @@ export const sendMessage = async (req, res) => {
       // 1. Direct Socket Message dispatch (Always send via socket if user is online)
       io.to(receiverSocketId).emit("newMessage", newMessage);
 
-      // 2. CRITICAL CHECK: Kya receiver active conversation tab/room me focused hai?
-      // Hum socket cluster me check karenge ki kya receiver ne 'senderId' naam ka chat room join kar rakha hai
-      const activeChatRoom = io.sockets.adapter.rooms.get(String(senderId)); 
+      // 2. 🎯 FIX: Check directly if receiver socket instance is inside the sender's room
+      // Hamara client senderId (jo ki receiver ke liye current talk thread h) ke naam se room join karta h
+      const targetRoomName = String(senderId);
+      const activeChatRoom = io.sockets.adapter.rooms.get(targetRoomName); 
+      
       if (activeChatRoom && activeChatRoom.has(receiverSocketId)) {
         isUserViewingSameChat = true;
       }
+    }
+
+    // 3. Fallback conditional triggers
+    if (isUserViewingSameChat) {
+      // Case 1: Same chat window open hai -> Silent execution loop (Socket handles UI)
+      console.log(`🎯 Receiver ${receiverId} is active in chat room with ${senderId}. Notification silenced.`);
+    } else {
+      // Case 2 & 3: User doosri screen par h ya background me h -> Send Push
+      await sendPushNotification({
+        senderName,
+        receiverId,
+        message: newMessage,
+        chatId: senderId, 
+      });
     }
 
     // 3. Fallback conditional triggers
