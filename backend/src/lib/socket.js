@@ -440,31 +440,32 @@ io.on("connection", async (socket) => {
     });
 
     // ── Disconnect (Added Asynchronous Database Sync + Live Emit Broadcast) ──
+    // ── Disconnect (Added Asynchronous Database Sync + Live Emit Broadcast) ──
     socket.on("disconnect", async () => {
-    console.log("❌ User disconnected:", userId);
-    if (userId && userId !== "undefined") {
-        
-        // 🆕 CRITICAL FIX: sirf tabhi delete karo jab map me maujood socket id
-        // isi (disconnecting) socket ki ho — agar naya connection already replace
-        // kar chuka hai to purana disconnect event usse delete na kare
-        if (userSocketMap[userId] === socket.id) {
-            const currentOfflineTime = new Date();
+        console.log("❌ User disconnected:", userId);
+        if (userId && userId !== "undefined") {
+            
+            if (userSocketMap[userId] === socket.id) {
+                const currentOfflineTime = new Date();
 
-            try {
-                await User.findByIdAndUpdate(userId, { lastActive: currentOfflineTime });
-                socket.broadcast.emit("userOfflineUpdate", {
-                    userId: userId,
-                    lastActive: currentOfflineTime
-                });
-            } catch (err) {
-                console.log("Error updating lastActive dynamic presence timestamp:", err.message);
+                try {
+                    await User.findByIdAndUpdate(userId, { lastActive: currentOfflineTime });
+                    socket.broadcast.emit("userOfflineUpdate", {
+                        userId: userId,
+                        lastActive: currentOfflineTime
+                    });
+                } catch (err) {
+                    console.log("Error updating lastActive dynamic presence timestamp:", err.message);
+                }
+
+                delete userSocketMap[userId];
+                hiddenStatusUsers.delete(userId);
+            } else {
+                console.log(`⚠️ Stale disconnect ignored for ${userId} — newer socket already active`);
             }
-
-            delete userSocketMap[userId];
-            hiddenStatusUsers.delete(userId);
-        } else {
-            console.log(`⚠️ Stale disconnect ignored for ${userId} — newer socket already active`);
         }
-    }
-    broadcastOnlineUsers();
-}); io, app, server };
+        broadcastOnlineUsers();
+    });
+}); // ← ye io.on("connection", ...) ko close karta hai
+
+export { io, app, server };
