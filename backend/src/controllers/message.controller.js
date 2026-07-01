@@ -2,7 +2,7 @@ import Message from "../models/message.model.js";
 import User from "../models/user.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
-import { sendPushNotification } from "../services/notification.service.js"; // 🆕 Import notification service
+import { sendPushNotification } from "../lib/notification.service.js"; // 🆕 Import notification service
 import bcrypt from "bcryptjs";
 
 // ── FETCH USERS FOR SIDEBAR (Hides Locked Chats) ──────────────────────────
