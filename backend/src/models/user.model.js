@@ -29,6 +29,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    notificationsEnabled: {
+  type: Boolean,
+  default: true,
+},
     blockedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
