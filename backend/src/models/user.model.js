@@ -72,15 +72,20 @@ const userSchema = new mongoose.Schema(
         default: [], 
       },
     ],
-    // ── ✅ NAYA: Realtime Presence Engine Field ──────────────────────
+    // ── Realtime Presence Engine Field ──────────────────────
     lastActive: {
       type: Date,
-      default: Date.now, // Shuruat me current time rahega, fir disconnect par update hoga
+      default: Date.now,
     },
     emailVerified: {
-  type: Boolean,
-  default: false,
-},
+      type: Boolean,
+      default: false,
+    },
+    // ── 🆕 FIREBASE PUSH NOTIFICATION TOKEN BUFFER MAPPING ──
+    fcmTokens: {
+      type: [String],
+      default: [], // Multiple login handles ke liye array framework
+    },
   },
   { timestamps: true }
 );
