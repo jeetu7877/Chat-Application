@@ -244,7 +244,7 @@ export const logout = (req, res) => {
 // ── Update Profile ────────────────────────────────────────────────────────────
 export const updateProfile = async (req, res) => {
   try {
-    const { profilePic, fullName, email, about, hideOnlineStatus } = req.body;
+    const { profilePic, fullName, email, about, hideOnlineStatus, notificationsEnabled } = req.body;
     const userId = req.user._id;
     const updateFields = {};
     if (profilePic) {
@@ -255,6 +255,7 @@ export const updateProfile = async (req, res) => {
     if (email !== undefined) updateFields.email = email;
     if (about !== undefined) updateFields.about = about;
     if (hideOnlineStatus !== undefined) updateFields.hideOnlineStatus = hideOnlineStatus;
+    if (notificationsEnabled !== undefined) updateFields.notificationsEnabled = notificationsEnabled; // 🆕 ADD THIS
     const updatedUser = await User.findByIdAndUpdate(userId, updateFields, { new: true }).select("-password");
     res.status(200).json(updatedUser);
   } catch (error) {
