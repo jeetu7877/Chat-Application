@@ -229,87 +229,69 @@ export const getMessages = async (req, res) => {
 };
 
 // ── SEND MESSAGE ─────────────────────────────────────────────────────────────
+// ── SEND MESSAGE CONTROLLER (WITH ACTIVE THREAD FILTERING) ──
 export const sendMessage = async (req, res) => {
   try {
     const { text, image, audio, file, fileName, fileType, documentFile, locationUrl, fileSize, mimeType, sharedContactId } = req.body;
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
-    const senderName = req.user.fullName; // Extracts sender metrics cleanly
+    const senderName = req.user.fullName;
 
     const receiver = await User.findById(receiverId);
     if (receiver?.blockedUsers?.includes(senderId.toString())) {
       return res.status(403).json({ error: "You cannot message this user" });
     }
 
+    // ... [Aapka Cloudinary uploads ka logic bilkul same rahega] ...
     let imageUrl, audioUrl, docUrl;
-
-    if (image) {
-      const uploadResponse = await cloudinary.uploader.upload(image);
-      imageUrl = uploadResponse.secure_url;
-    }
-
-    if (audio) {
-      const uploadResponse = await cloudinary.uploader.upload(audio, {
-        resource_type: "video", folder: "audio_messages",
-      });
-      audioUrl = uploadResponse.secure_url;
-    }
-
+    if (image) { const uploadResponse = await cloudinary.uploader.upload(image); imageUrl = uploadResponse.secure_url; }
+    if (audio) { const uploadResponse = await cloudinary.uploader.upload(audio, { resource_type: "video", folder: "audio_messages" }); audioUrl = uploadResponse.secure_url; }
     const targetDoc = documentFile || file;
     const currentMime = fileType || mimeType || "";
-
     if (targetDoc) {
-      let ext = "pdf";
-      if (fileName && fileName.includes(".")) {
-        ext = fileName.split(".").pop().toLowerCase();
-      }
-
-      const uploadResponse = await cloudinary.uploader.upload(targetDoc, {
-        resource_type: "raw",
-        folder: "document_messages",
-        format: ext,
-      });
+      let ext = "pdf"; if (fileName && fileName.includes(".")) ext = fileName.split(".").pop().toLowerCase();
+      const uploadResponse = await cloudinary.uploader.upload(targetDoc, { resource_type: "raw", folder: "document_messages", format: ext });
       docUrl = uploadResponse.secure_url;
     }
 
     const newMessage = new Message({
-      senderId,
-      receiverId,
-      text,
-      image: imageUrl,
-      audio: audioUrl,
-      documentFile: docUrl,
-      locationUrl: locationUrl || null,
-      file: docUrl,
-      fileName: fileName || "Document.pdf",
-      fileType: currentMime || "application/pdf",
-      fileSize: fileSize || "Attachment",
+      senderId, receiverId, text, image: imageUrl, audio: audioUrl, documentFile: docUrl,
+      locationUrl: locationUrl || null, file: docUrl, fileName: fileName || "Document.pdf",
+      fileType: currentMime || "application/pdf", fileSize: fileSize || "Attachment",
       sharedContactId: sharedContactId || null,
     });
 
     await newMessage.save();
 
+    // ── 🆕 SOCKET.IO & WHATSAPP PUSH TRACKING MATRIX ──
     const receiverSocketId = getReceiverSocketId(receiverId);
-    let isUserViewingChat = false;
+    let isUserViewingSameChat = false;
 
     if (receiverSocketId) {
-      // Direct Web Socket Delivery Mechanism
+      // 1. Direct Socket Message dispatch (Always send via socket if user is online)
       io.to(receiverSocketId).emit("newMessage", newMessage);
 
-      // Verify if receiver node is actively active inside target client room bounds
-      const clientRooms = io.sockets.adapter.rooms.get(String(senderId)); 
-      if (clientRooms && clientRooms.has(receiverSocketId)) {
-        isUserViewingChat = true;
+      // 2. CRITICAL CHECK: Kya receiver active conversation tab/room me focused hai?
+      // Hum socket cluster me check karenge ki kya receiver ne 'senderId' naam ka chat room join kar rakha hai
+      const activeChatRoom = io.sockets.adapter.rooms.get(String(senderId)); 
+      if (activeChatRoom && activeChatRoom.has(receiverSocketId)) {
+        isUserViewingSameChat = true;
       }
     }
 
-    // 🆕 Trigger Firebase Push Notification fallback loop if node is completely offline/unfocused
-    if (!isUserViewingChat) {
+    // 3. Fallback conditional triggers
+    if (isUserViewingSameChat) {
+      // Case 1: Same chat window open hai -> Do absolutely nothing (Socket will automatically update UI)
+      console.log("Receiver is viewing the same chat thread. Silencing notification loops.");
+    } else {
+      // Case 2 & 3: User App me online toh hai par doosri screen par hai, ya fir completely offline/background me hai.
+      // Firebase Multicast device payload dispatch karenge.
+      // Agar client application foreground me khuli hogi toh push tray pop up nahi hoga, direct custom react toast trigger ho jayega.
       await sendPushNotification({
         senderName,
         receiverId,
         message: newMessage,
-        chatId: senderId, // maps room identifier parameters directly
+        chatId: senderId, // Passes sender id so client app can tap & open thread instantly
       });
     }
 
@@ -319,7 +301,6 @@ export const sendMessage = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
-
 // ── DELETE MESSAGE ────────────────────────────────────────────────────────────
 export const deleteMessage = async (req, res) => {
   try {
